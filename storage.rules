@@ -1,0 +1,24 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Helper function: Check if user has access to tenant
+    function hasTenantAccess(tenantId) {
+      return request.auth != null &&
+             tenantId in request.auth.token.tenantIds;
+    }
+
+    // Tenant-specific storage paths
+    match /tenants/{tenantId}/{allPaths=**} {
+      // Allow read/write only for authenticated users with tenant access
+      allow read: if hasTenantAccess(tenantId);
+      allow write: if hasTenantAccess(tenantId) &&
+                     request.resource.size < 10 * 1024 * 1024 && // Max 10MB
+                     request.resource.contentType.matches('image/.*'); // Images only
+    }
+
+    // Default deny all other paths
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

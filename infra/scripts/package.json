@@ -1,0 +1,15 @@
+{
+  "name": "@corevo/scripts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "seed": "node seed-tenant.js",
+    "provision": "node provision-tenant.js",
+    "gen-demo": "node gen-demo-data.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.6.0",
+    "dotenv": "^16.4.5"
+  }
+}

@@ -1,0 +1,136 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function: Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function: Check if user has access to organization
+    function hasOrganizationAccess(organizationId) {
+      return isAuthenticated() &&
+             request.auth.token.organizationId == organizationId;
+    }
+
+    // Helper function: Check if user has access to tenant
+    function hasTenantAccess(tenantId) {
+      return isAuthenticated() &&
+             tenantId in request.auth.token.tenantIds;
+    }
+
+    // Helper function: Check if user has specific role in tenant (from custom claims)
+    function hasRole(tenantId, role) {
+      return hasTenantAccess(tenantId) &&
+             request.auth.token.roles[tenantId] == role;
+    }
+
+    // Helper function: Check if user is owner or manager of tenant
+    function isManagerOrOwner(tenantId) {
+      return hasTenantAccess(tenantId) &&
+             (request.auth.token.roles[tenantId] == 'owner' ||
+              request.auth.token.roles[tenantId] == 'manager');
+    }
+
+    // Helper function: Check if user is owner, manager, or accountant
+    function canManageFinances(tenantId) {
+      return hasTenantAccess(tenantId) &&
+             (request.auth.token.roles[tenantId] == 'owner' ||
+              request.auth.token.roles[tenantId] == 'manager' ||
+              request.auth.token.roles[tenantId] == 'accountant');
+    }
+
+    // Organizations - users can read their own organization
+    match /organizations/{organizationId} {
+      allow read: if hasOrganizationAccess(organizationId);
+      allow write: if false; // Only functions can write
+
+      // Tenants under organization
+      match /tenants/{tenantId} {
+        allow read: if hasOrganizationAccess(organizationId);
+        allow write: if false; // Only functions can write
+      }
+    }
+
+    // Root tenants collection - read only for authenticated users with access
+    match /tenants/{tenantId} {
+      allow read: if hasTenantAccess(tenantId);
+      allow write: if false; // Only functions can write
+    }
+
+    // Tenant sub-collections
+    match /tenants/{tenantId}/{collection}/{docId} {
+      // Users collection
+      allow read: if hasTenantAccess(tenantId);
+      allow create: if false; // Only functions can create users
+      allow update, delete: if isManagerOrOwner(tenantId);
+
+      // Customers - read/write for authenticated tenant users
+      allow read, write: if hasTenantAccess(tenantId) && collection == 'customers';
+
+      // Appointments - read/write for authenticated tenant users
+      allow read, write: if hasTenantAccess(tenantId) && collection == 'appointments';
+
+      // Services - read/write for managers and owners
+      allow read: if hasTenantAccess(tenantId) && collection == 'services';
+      allow write: if isManagerOrOwner(tenantId) && collection == 'services';
+
+      // Charts (medical records) - read/write for staff
+      allow read, write: if hasTenantAccess(tenantId) && collection == 'charts';
+
+      // Messages - read only
+      allow read: if hasTenantAccess(tenantId) && collection == 'messages';
+      allow write: if false; // Only functions can write
+
+      // AI Suggestions - read for all, approve for managers
+      allow read: if hasTenantAccess(tenantId) && collection == 'ai_suggestions';
+      allow update: if isManagerOrOwner(tenantId) &&
+                      collection == 'ai_suggestions' &&
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approved', 'approvedBy', 'approvedAt']);
+      allow create, delete: if false; // Only functions
+
+      // Metrics - read only
+      allow read: if hasTenantAccess(tenantId) && collection == 'metrics';
+      allow write: if false; // Only functions can write
+
+      // Forecasts - read only
+      allow read: if hasTenantAccess(tenantId) && collection == 'forecasts';
+      allow write: if false; // Only functions can write
+
+      // Insights - read only
+      allow read: if hasTenantAccess(tenantId) && collection == 'insights';
+      allow write: if false; // Only functions can write
+
+      // Audit logs - read only for owners
+      allow read: if hasRole(tenantId, 'owner') && collection == 'audit_logs';
+      allow write: if false; // Only functions can write
+
+      // Settings - read for all, write for owners only
+      allow read: if hasTenantAccess(tenantId) && collection == 'settings';
+      allow write: if hasRole(tenantId, 'owner') && collection == 'settings';
+
+      // Sales - staff can read their own, managers/owners/accountants can read/write all
+      allow read: if hasTenantAccess(tenantId) && collection == 'sales' &&
+                     (isManagerOrOwner(tenantId) || canManageFinances(tenantId) ||
+                      resource.data.staffId == request.auth.uid);
+      allow write: if canManageFinances(tenantId) && collection == 'sales';
+
+      // Expenses - owner/manager/accountant only
+      allow read, write: if canManageFinances(tenantId) && collection == 'expenses';
+
+      // Ads - owner/manager only
+      allow read, write: if isManagerOrOwner(tenantId) && collection == 'ads';
+
+      // Action Items - read for all, write for managers/owners
+      allow read: if hasTenantAccess(tenantId) && collection == 'action_items';
+      allow write: if isManagerOrOwner(tenantId) && collection == 'action_items';
+
+      // KPI Targets - owner/manager only
+      allow read, write: if isManagerOrOwner(tenantId) && collection == 'kpi_targets';
+    }
+
+    // Default deny all other paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

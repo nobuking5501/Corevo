@@ -1,0 +1,41 @@
+{
+  "name": "corevo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Corevo - Salon Management OS (Multi-tenant SaaS)",
+  "workspaces": [
+    "apps/*",
+    "backend/*",
+    "infra/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace=apps/web",
+    "dev:functions": "npm run dev --workspace=backend/functions",
+    "build:web": "npm run build --workspace=apps/web",
+    "build:functions": "npm run build --workspace=backend/functions",
+    "build": "npm run build:web && npm run build:functions",
+    "lint": "npm run lint --workspaces",
+    "test": "npm run test --workspaces",
+    "seed": "node infra/scripts/seed-tenant.js",
+    "provision": "node infra/scripts/provision-tenant.js",
+    "gen-demo": "node infra/scripts/gen-demo-data.js"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "keywords": [
+    "salon",
+    "management",
+    "saas",
+    "multi-tenant",
+    "firebase",
+    "next.js"
+  ],
+  "author": "Corevo Team",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@radix-ui/react-checkbox": "^1.3.3",
+    "googleapis": "^164.1.0"
+  }
+}

@@ -1,0 +1,508 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { collection, query, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, orderBy } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
+import { Service } from "@/types";
+import { MainLayout } from "@/components/layout/MainLayout";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { toast } from "@/hooks/use-toast";
+import { Plus, Clock, DollarSign, TrendingUp, Edit, Trash2 } from "lucide-react";
+import { formatCurrency } from "@/lib/utils";
+
+const isDev = process.env.NEXT_PUBLIC_APP_ENV === "dev";
+
+export default function ServicesPage() {
+  const [tenantId, setTenantId] = useState<string | null>(null);
+  const [services, setServices] = useState<Service[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editingService, setEditingService] = useState<Service | null>(null);
+
+  // Form state
+  const [formData, setFormData] = useState({
+    name: "",
+    price: "",
+    durationMinutes: "",
+    marginCoefficient: "",
+    description: "",
+    category: "",
+    setDiscountEligible: true,
+    sortOrder: "0",
+    active: true,
+  });
+
+  // Get tenant ID from Firebase Auth
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!firebaseUser) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const tokenResult = await firebaseUser.getIdTokenResult(false);
+        let tenantIds = (tokenResult.claims.tenantIds as string[]) || [];
+
+        if (isDev && tenantIds.length === 0) {
+          const devTenantId = localStorage.getItem("dev_tenantId");
+          if (devTenantId) tenantIds = [devTenantId];
+        }
+
+        if (tenantIds.length > 0) {
+          setTenantId(tenantIds[0]);
+        } else {
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error("Error getting tenant ID:", error);
+        setLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Load services
+  useEffect(() => {
+    if (!tenantId) return;
+
+    const loadServices = async () => {
+      try {
+        const servicesRef = collection(db, `tenants/${tenantId}/services`);
+        const servicesQuery = query(servicesRef, orderBy("createdAt", "desc"));
+        const snapshot = await getDocs(servicesQuery);
+        const servicesData = snapshot.docs.map((doc) => ({
+          ...doc.data(),
+          id: doc.id,
+          createdAt: doc.data().createdAt?.toDate(),
+          updatedAt: doc.data().updatedAt?.toDate(),
+        })) as Service[];
+        setServices(servicesData);
+      } catch (error) {
+        console.error("Error loading services:", error);
+        toast({
+          variant: "destructive",
+          title: "サービスデータの読み込みエラー",
+          description: "サービスデータの取得に失敗しました",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadServices();
+  }, [tenantId]);
+
+  // Reset form
+  const resetForm = () => {
+    setFormData({
+      name: "",
+      price: "",
+      durationMinutes: "",
+      marginCoefficient: "",
+      description: "",
+      category: "",
+      setDiscountEligible: true,
+      sortOrder: "0",
+      active: true,
+    });
+    setEditingService(null);
+  };
+
+  // Open dialog for new service
+  const handleNew = () => {
+    resetForm();
+    setIsDialogOpen(true);
+  };
+
+  // Open dialog for editing
+  const handleEdit = (service: Service) => {
+    setEditingService(service);
+    setFormData({
+      name: service.name,
+      price: service.price.toString(),
+      durationMinutes: service.durationMinutes.toString(),
+      marginCoefficient: service.marginCoefficient.toString(),
+      description: service.description || "",
+      category: service.category || "",
+      setDiscountEligible: service.setDiscountEligible ?? true,
+      sortOrder: (service.sortOrder ?? 0).toString(),
+      active: service.active,
+    });
+    setIsDialogOpen(true);
+  };
+
+  // Delete service
+  const handleDelete = async (service: Service) => {
+    if (!tenantId) return;
+    if (!confirm(`「${service.name}」を削除してもよろしいですか？`)) return;
+
+    try {
+      await deleteDoc(doc(db, `tenants/${tenantId}/services`, service.id));
+
+      toast({
+        title: "サービスを削除しました",
+        description: `${service.name}を削除しました`,
+      });
+
+      // Reload services
+      const servicesRef = collection(db, `tenants/${tenantId}/services`);
+      const servicesQuery = query(servicesRef, orderBy("createdAt", "desc"));
+      const snapshot = await getDocs(servicesQuery);
+      const servicesData = snapshot.docs.map((doc) => ({
+        ...doc.data(),
+        id: doc.id,
+        createdAt: doc.data().createdAt?.toDate(),
+        updatedAt: doc.data().updatedAt?.toDate(),
+      })) as Service[];
+      setServices(servicesData);
+    } catch (error) {
+      console.error("Error deleting service:", error);
+      toast({
+        variant: "destructive",
+        title: "削除エラー",
+        description: "サービスの削除に失敗しました",
+      });
+    }
+  };
+
+  // Submit form
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tenantId) return;
+
+    setIsSubmitting(true);
+
+    try {
+      const serviceData = {
+        tenantId: tenantId,
+        name: formData.name,
+        price: parseFloat(formData.price),
+        durationMinutes: parseInt(formData.durationMinutes),
+        marginCoefficient: parseFloat(formData.marginCoefficient),
+        description: formData.description || null,
+        category: formData.category || null,
+        setDiscountEligible: formData.setDiscountEligible,
+        sortOrder: parseInt(formData.sortOrder) || 0,
+        active: formData.active,
+        tags: [],
+        promotionPriority: 0,
+        updatedAt: serverTimestamp(),
+      };
+
+      if (editingService) {
+        // Update existing service
+        await updateDoc(doc(db, `tenants/${tenantId}/services`, editingService.id), serviceData);
+        toast({
+          title: "サービスを更新しました",
+          description: `${formData.name}を更新しました`,
+        });
+      } else {
+        // Create new service
+        await addDoc(collection(db, `tenants/${tenantId}/services`), {
+          ...serviceData,
+          createdAt: serverTimestamp(),
+        });
+        toast({
+          title: "サービスを追加しました",
+          description: `${formData.name}を登録しました`,
+        });
+      }
+
+      resetForm();
+      setIsDialogOpen(false);
+
+      // Reload services
+      const servicesRef = collection(db, `tenants/${tenantId}/services`);
+      const servicesQuery = query(servicesRef, orderBy("createdAt", "desc"));
+      const snapshot = await getDocs(servicesQuery);
+      const servicesData = snapshot.docs.map((doc) => ({
+        ...doc.data(),
+        id: doc.id,
+        createdAt: doc.data().createdAt?.toDate(),
+        updatedAt: doc.data().updatedAt?.toDate(),
+      })) as Service[];
+      setServices(servicesData);
+    } catch (error) {
+      console.error("Error saving service:", error);
+      toast({
+        variant: "destructive",
+        title: "保存エラー",
+        description: "サービスの保存に失敗しました",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <MainLayout>
+        <div className="text-center py-12">読み込み中...</div>
+      </MainLayout>
+    );
+  }
+
+  return (
+    <MainLayout>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">メニュー管理</h1>
+            <p className="text-gray-500">サービスメニューと料金設定</p>
+          </div>
+          <Button onClick={handleNew}>
+            <Plus className="mr-2 h-4 w-4" />
+            新規メニュー
+          </Button>
+        </div>
+
+        {services.length === 0 ? (
+          <Card>
+            <CardContent className="py-12">
+              <div className="text-center text-gray-500">
+                <p>サービスメニューがありません</p>
+                <p className="text-sm mt-2">新規メニューボタンからサービスを登録してください</p>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {services.map((service) => (
+              <Card key={service.id} className={service.active ? "" : "opacity-60"}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-lg">{service.name}</h3>
+                        {service.setDiscountEligible && (
+                          <span className="text-yellow-500 text-lg" title="セット割引対象">★</span>
+                        )}
+                      </div>
+                      {service.category && (
+                        <span className="text-xs text-gray-500">カテゴリー: {service.category}</span>
+                      )}
+                      {!service.active && (
+                        <span className="text-xs text-red-500">（無効）</span>
+                      )}
+                    </div>
+                    <div className="flex gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleEdit(service)}
+                        className="h-8 w-8 p-0"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDelete(service)}
+                        className="h-8 w-8 p-0 text-red-600 hover:text-red-700"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {service.description && (
+                    <p className="text-sm text-gray-600">{service.description}</p>
+                  )}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm">
+                      <DollarSign className="h-4 w-4 text-gray-400" />
+                      <span className="font-semibold">{formatCurrency(service.price)}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <Clock className="h-4 w-4 text-gray-400" />
+                      <span>{service.durationMinutes}分</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <TrendingUp className="h-4 w-4 text-gray-400" />
+                      <span>粗利率: {(service.marginCoefficient * 100).toFixed(0)}%</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* Add/Edit Service Dialog */}
+        <Dialog open={isDialogOpen} onOpenChange={(open) => {
+          setIsDialogOpen(open);
+          if (!open) resetForm();
+        }}>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle>
+                {editingService ? "サービス編集" : "新規サービス登録"}
+              </DialogTitle>
+              <DialogDescription>
+                {editingService ? "サービス情報を編集してください" : "新しいサービス情報を入力してください"}
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSubmit}>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">
+                    サービス名 <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    required
+                    placeholder="例: カット"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="price">
+                    料金（円） <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="price"
+                    type="number"
+                    min="0"
+                    step="100"
+                    value={formData.price}
+                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                    required
+                    placeholder="5000"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="duration">
+                    所要時間（分） <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="duration"
+                    type="number"
+                    min="5"
+                    step="5"
+                    value={formData.durationMinutes}
+                    onChange={(e) => setFormData({ ...formData, durationMinutes: e.target.value })}
+                    required
+                    placeholder="60"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="margin">
+                    粗利率（%） <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="margin"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={formData.marginCoefficient ? (parseFloat(formData.marginCoefficient) * 100).toString() : ""}
+                    onChange={(e) => setFormData({ ...formData, marginCoefficient: (parseFloat(e.target.value) / 100).toString() })}
+                    required
+                    placeholder="70"
+                  />
+                  <p className="text-xs text-gray-500">
+                    材料費などを引いた後の利益率を入力してください
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="description">説明</Label>
+                  <Input
+                    id="description"
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    placeholder="サービスの説明"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="category">カテゴリー</Label>
+                  <Input
+                    id="category"
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    placeholder="例: 顔、手、足、VIO"
+                  />
+                  <p className="text-xs text-gray-500">
+                    セット割引のグルーピングに使用されます
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="sortOrder">表示順序</Label>
+                  <Input
+                    id="sortOrder"
+                    type="number"
+                    min="0"
+                    value={formData.sortOrder}
+                    onChange={(e) => setFormData({ ...formData, sortOrder: e.target.value })}
+                    placeholder="0"
+                  />
+                  <p className="text-xs text-gray-500">
+                    数字が小さいほど上に表示されます
+                  </p>
+                </div>
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="setDiscountEligible"
+                      checked={formData.setDiscountEligible}
+                      onChange={(e) => setFormData({ ...formData, setDiscountEligible: e.target.checked })}
+                      className="h-4 w-4"
+                    />
+                    <Label htmlFor="setDiscountEligible" className="font-normal cursor-pointer">
+                      セット割引対象にする（★マーク付き）
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="active"
+                      checked={formData.active}
+                      onChange={(e) => setFormData({ ...formData, active: e.target.checked })}
+                      className="h-4 w-4"
+                    />
+                    <Label htmlFor="active" className="font-normal cursor-pointer">
+                      有効にする（予約時に選択可能にする）
+                    </Label>
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setIsDialogOpen(false);
+                    resetForm();
+                  }}
+                  disabled={isSubmitting}
+                >
+                  キャンセル
+                </Button>
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? "保存中..." : editingService ? "更新" : "登録"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </MainLayout>
+  );
+}

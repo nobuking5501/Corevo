@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Fix Authentication - Corevo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; }
+        button {
+            background: #4285f4;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover { background: #357ae8; }
+        .success { color: #0f9d58; font-weight: bold; }
+        .error { color: #d93025; font-weight: bold; }
+        #result { margin-top: 20px; padding: 15px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Corevo 認証修正ツール</h1>
+        <p>この画面で認証の問題を修正します。</p>
+
+        <h3>ステップ1: ローカルストレージ設定</h3>
+        <button onclick="setLocalStorage()">開発用テナントIDを設定</button>
+
+        <h3>ステップ2: 認証状態クリア</h3>
+        <button onclick="clearAuth()">ログアウト＆キャッシュクリア</button>
+
+        <h3>ステップ3: アプリに戻る</h3>
+        <button onclick="goToLogin()">ログイン画面へ</button>
+
+        <div id="result"></div>
+    </div>
+
+    <script>
+        const TENANT_ID = 'tenant_1761142644702';
+
+        function setLocalStorage() {
+            try {
+                localStorage.setItem('dev_tenantId', TENANT_ID);
+                showResult('✅ 開発用テナントIDを設定しました: ' + TENANT_ID, 'success');
+            } catch (error) {
+                showResult('❌ エラー: ' + error.message, 'error');
+            }
+        }
+
+        function clearAuth() {
+            try {
+                // Clear all Firebase auth data
+                const keys = Object.keys(localStorage);
+                keys.forEach(key => {
+                    if (key.startsWith('firebase:')) {
+                        localStorage.removeItem(key);
+                    }
+                });
+
+                sessionStorage.clear();
+
+                showResult('✅ 認証状態をクリアしました。次にログイン画面に移動してください。', 'success');
+            } catch (error) {
+                showResult('❌ エラー: ' + error.message, 'error');
+            }
+        }
+
+        function goToLogin() {
+            window.location.href = '/login';
+        }
+
+        function showResult(message, type) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.className = type;
+            resultDiv.textContent = message;
+        }
+
+        // Auto-run on load
+        window.onload = function() {
+            showResult('ℹ️ 準備完了。上記のボタンを順番にクリックしてください。', 'success');
+        };
+    </script>
+</body>
+</html>
