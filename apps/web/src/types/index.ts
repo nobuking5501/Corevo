@@ -38,7 +38,8 @@ export interface Tenant {
 // User (スタッフ) - 複数の Tenant に所属可能
 export interface User {
   id: string;
-  organizationId: string; // 所属組織ID
+  isPlatformAdmin?: boolean; // Platform Admin (SaaS運営者) フラグ
+  organizationId?: string; // 所属組織ID (Platform Adminの場合はnull/undefined)
   tenantIds: string[]; // アクセス可能な店舗ID配列
   email: string;
   displayName: string;
@@ -50,9 +51,57 @@ export interface User {
 
 // Custom Claims の型定義
 export interface CustomClaims {
-  organizationId: string;
+  isPlatformAdmin?: boolean; // Platform Admin フラグ
+  organizationId?: string; // Platform Adminの場合はundefined
   tenantIds: string[];
   roles: Record<string, UserRole>;
+}
+
+// Platform Admin用の全体統計
+export interface PlatformAdminStats {
+  totalOrganizations: number;
+  totalTenants: number;
+  totalCustomers: number;
+  totalRevenue: number;
+  activeOrganizations: number;
+  trialOrganizations: number;
+  suspendedOrganizations: number;
+}
+
+// Organization詳細統計（Platform Admin用）
+export interface OrganizationStats {
+  organizationId: string;
+  tenantCount: number;
+  totalCustomers: number;
+  totalRevenue: number;
+  monthlyRevenue: number;
+  appointmentCount: number;
+  lastActivityAt?: Date;
+}
+
+// Industry-specific profile data
+export type SalonIndustryType = "beauty" | "esthetic" | "nail" | "general";
+
+export interface CustomerSalonProfile {
+  // Common fields for all salon types
+  allergies?: string; // アレルギー情報
+
+  // Beauty salon specific (美容室)
+  hairType?: "straight" | "wavy" | "curly" | "coarse" | "fine"; // 髪質
+  hairConcerns?: string[]; // 髪の悩み（ダメージ、薄毛、etc.）
+  scalpType?: "normal" | "dry" | "oily" | "sensitive"; // 頭皮タイプ
+
+  // Esthetic salon specific (エステサロン)
+  skinType?: "normal" | "dry" | "oily" | "combination" | "sensitive"; // 肌質
+  skinConcerns?: string[]; // 肌の悩み（シミ、シワ、ニキビ、etc.）
+
+  // Nail salon specific (ネイルサロン)
+  nailLength?: "short" | "medium" | "long"; // 爪の長さ
+  nailShape?: "square" | "round" | "oval" | "almond" | "stiletto"; // 爪の形
+  nailConcerns?: string[]; // 爪の悩み（割れやすい、薄い、etc.）
+
+  // General notes
+  specialNotes?: string; // 特記事項
 }
 
 export interface Customer {
@@ -62,14 +111,33 @@ export interface Customer {
   kana: string;
   email?: string;
   phone?: string;
-  consent: {
-    marketing: boolean;
-    photoUsage: boolean;
+
+  // Basic information
+  birthday?: Date; // 生年月日
+  gender?: "male" | "female" | "other" | "prefer-not-to-say"; // 性別
+  address?: {
+    zipCode?: string; // 郵便番号
+    prefecture?: string; // 都道府県
+    city?: string; // 市区町村
+    street?: string; // 番地・建物名
   };
+
+  // Preferences
+  preferredStaffId?: string; // 希望スタッフID
   visitInterval?: number; // days
   preferences: string[];
   tags: string[];
   lastVisit?: Date;
+
+  // Consent
+  consent: {
+    marketing: boolean;
+    photoUsage: boolean;
+  };
+
+  // Industry-specific profile (editable by salon type)
+  salonProfile?: CustomerSalonProfile;
+
   // 障害者情報
   disability?: {
     hasDisability: boolean;
@@ -81,12 +149,14 @@ export interface Customer {
       relationship: string;
     };
   };
+
   // LINE連携情報
   lineUserId?: string; // LINE User ID
   lineDisplayName?: string; // LINE表示名
   linePictureUrl?: string; // LINEプロフィール画像URL
   lineLinkedAt?: Date; // LINE連携日時
   lineConsent?: boolean; // LINE配信同意
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -263,6 +333,7 @@ export interface Insight {
 export interface Settings {
   id: string;
   tenantId: string;
+  salonIndustryType?: SalonIndustryType; // 業種タイプ（美容室、エステ、ネイル、一般）
   businessHours: {
     [day: string]: { open: string; close: string } | null;
   };

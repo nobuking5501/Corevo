@@ -148,7 +148,7 @@ interface Appointment {
   endAt: Date;
   status: string;
   notes?: string;
-  pricing: {
+  pricing?: {
     subtotal: number;
     discount: number;
     total: number;
@@ -1373,30 +1373,32 @@ export default function AppointmentsPage() {
                         </div>
 
                         {/* Pricing */}
-                        <div className="border-t pt-3">
-                          <div className="space-y-1 text-sm">
-                            <div className="flex justify-between text-gray-600">
-                              <span>小計</span>
-                              <span>
-                                {formatCurrency(appointment.pricing.subtotal)}
-                              </span>
-                            </div>
-                            {appointment.pricing.discount > 0 && (
-                              <div className="flex justify-between text-green-600">
-                                <span>セット割引</span>
+                        {appointment.pricing && (
+                          <div className="border-t pt-3">
+                            <div className="space-y-1 text-sm">
+                              <div className="flex justify-between text-gray-600">
+                                <span>小計</span>
                                 <span>
-                                  -{formatCurrency(appointment.pricing.discount)}
+                                  {formatCurrency(appointment.pricing.subtotal)}
                                 </span>
                               </div>
-                            )}
-                            <div className="flex justify-between font-bold text-gray-900 pt-1 border-t">
-                              <span>合計</span>
-                              <span>
-                                {formatCurrency(appointment.pricing.total)}
-                              </span>
+                              {appointment.pricing.discount > 0 && (
+                                <div className="flex justify-between text-green-600">
+                                  <span>セット割引</span>
+                                  <span>
+                                    -{formatCurrency(appointment.pricing.discount)}
+                                  </span>
+                                </div>
+                              )}
+                              <div className="flex justify-between font-bold text-gray-900 pt-1 border-t">
+                                <span>合計</span>
+                                <span>
+                                  {formatCurrency(appointment.pricing.total)}
+                                </span>
+                              </div>
                             </div>
                           </div>
-                        </div>
+                        )}
 
                         {/* Notes */}
                         {appointment.notes && (

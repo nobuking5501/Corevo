@@ -33,7 +33,11 @@ lerna-debug.log*
 firebase-debug.log
 firestore-debug.log
 ui-debug.log
-functions/lib/
+backend/functions/lib/
+
+# Firebase Emulator
+emulator-data/
+*-debug.log
 
 # IDE
 .vscode/
@@ -50,6 +54,7 @@ functions/lib/
 .cache/
 temp/
 tmp/
+scripts/archive/
 
 # Secrets (double-check)
 *.pem

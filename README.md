@@ -41,53 +41,64 @@ Corevo/
 
 ## クイックスタート
 
+> 💡 **共同開発者向け**: 詳細なセットアップ手順は [DEVELOPMENT.md](DEVELOPMENT.md) を参照してください
+
 ### 前提条件
 
 - Node.js 20+
 - npm 10+
 - Firebase CLI (`npm install -g firebase-tools`)
-- Firebase プロジェクト作成済み
 
 ### 1. セットアップ
 
 ```bash
+# リポジトリをクローン
+git clone <repository-url>
+cd Corevo
+
 # 依存関係のインストール
 npm install
 
 # 環境変数の設定
-cp .env.example .env
-# .env を編集して必要な値を設定
+cp apps/web/.env.local.example apps/web/.env.local
+# apps/web/.env.local を編集してFirebase設定を追加
+```
 
+### 2. Firebase Emulatorで開発（推奨）
+
+本番環境に影響を与えずにローカルで開発できます。
+
+```bash
+# ターミナル1: Emulator起動
+npm run emulator
+
+# ターミナル2: テストデータ投入
+npm run emulator:seed
+
+# ターミナル3: Web開発サーバー起動
+npm run dev:web
+```
+
+**アクセス**:
+- Web App: http://localhost:3006
+- Emulator UI: http://127.0.0.1:4000
+
+**テスト用ログイン**:
+- Email: `test@example.com`
+- Password: `test1234`
+
+### 3. 本番Firebaseで開発
+
+```bash
 # Firebase にログイン
 firebase login
 
-# Firebase プロジェクトを初期化
+# Firebase プロジェクトを選択
 firebase use --add
-```
 
-### 2. 開発サーバー起動
-
-```bash
-# Web (Next.js) - http://localhost:3000
+# Web開発サーバー起動（.env.localでNEXT_PUBLIC_APP_ENV=productionに設定）
 npm run dev:web
-
-# Firebase Functions (別ターミナル)
-npm run dev:functions
 ```
-
-### 3. シードデータ投入（オプション）
-
-```bash
-# デモテナント作成
-npm run seed
-```
-
-### 4. テスト用ログイン
-
-シード実行後:
-- **Email**: `owner@demo.corevo.test`
-- **Password**: `demo1234`
-- **Tenant**: デモサロン
 
 ## 主要機能
 
