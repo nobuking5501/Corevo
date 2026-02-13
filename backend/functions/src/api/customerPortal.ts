@@ -404,6 +404,97 @@ export const createCustomerAppointment = onCall(
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
 
+      // 予約完了メッセージを送信（エラーがあってもメイン処理には影響させない）
+      try {
+        // テナント情報を取得
+        const tenantDoc = await db.collection("tenants").doc(tenantId).get();
+        const tenantData = tenantDoc.data();
+        const salonName = tenantData?.name || "当店";
+
+        // 顧客情報を取得
+        const customerDoc = customerSnapshot.docs[0];
+        const customerData = customerDoc.data();
+        const customerName = customerData?.name || "お客様";
+
+        // サービス名を取得
+        const serviceNames = await Promise.all(
+          serviceIds.map(async (serviceId) => {
+            const serviceDoc = await db
+              .collection(`tenants/${tenantId}/services`)
+              .doc(serviceId)
+              .get();
+            return serviceDoc.exists ? serviceDoc.data()?.name : null;
+          })
+        );
+        const serviceName = serviceNames.filter((n) => n).join(", ") || "サービス";
+
+        // 日時フォーマット
+        const appointmentDate = new Intl.DateTimeFormat("ja-JP", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          timeZone: "Asia/Tokyo",
+        }).format(new Date(startAt));
+
+        // メッセージテンプレートを取得
+        const templateDoc = await db
+          .collection(`tenants/${tenantId}/lineSettings`)
+          .doc("messageTemplates")
+          .get();
+
+        let messageBody = "";
+        if (templateDoc.exists && templateDoc.data()?.bookingConfirmationMessage) {
+          // カスタムテンプレートを使用
+          messageBody = templateDoc.data()?.bookingConfirmationMessage || "";
+          // 変数を置換
+          messageBody = messageBody
+            .replace(/\{\{customerName\}\}/g, customerName)
+            .replace(/\{\{appointmentDate\}\}/g, appointmentDate)
+            .replace(/\{\{serviceName\}\}/g, serviceName)
+            .replace(/\{\{salonName\}\}/g, salonName);
+        } else {
+          // デフォルトメッセージ
+          messageBody = `${customerName} 様\n\nご予約ありがとうございます。\n\n【予約内容】\n日時: ${appointmentDate}\nサービス: ${serviceName}\n\n${salonName} にてお待ちしております。`;
+        }
+
+        // LINE設定を確認
+        const lineSettings = tenantData?.settings?.line;
+        const featureFlags = tenantData?.settings?.featureFlags;
+
+        if (
+          featureFlags?.lineIntegration &&
+          lineSettings?.channelAccessToken &&
+          customerData?.lineUserId
+        ) {
+          // LINE Messaging APIでメッセージ送信
+          const axios = require("axios");
+          await axios.post(
+            "https://api.line.me/v2/bot/message/push",
+            {
+              to: customerData.lineUserId,
+              messages: [
+                {
+                  type: "text",
+                  text: messageBody,
+                },
+              ],
+            },
+            {
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${lineSettings.channelAccessToken}`,
+              },
+            }
+          );
+          console.log(`✅ Booking confirmation message sent to ${customerName}`);
+        }
+      } catch (messageError: any) {
+        // メッセージ送信エラーはログに記録するだけで、予約作成は成功とする
+        console.error("Failed to send booking confirmation message:", messageError);
+      }
+
       return {
         success: true,
         appointmentId: appointmentRef.id,

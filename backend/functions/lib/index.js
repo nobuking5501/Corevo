@@ -33,8 +33,8 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.lineWebhook = exports.nbaJob = exports.insightJob = exports.forecastJob = exports.metricsJob = exports.getAdAnalysis = exports.getExpenseAnalysis = exports.getSalesAnalysis = exports.scheduledMonthlyMetrics = exports.scheduledWeeklyMetrics = exports.scheduledDailyMetrics = exports.getMetrics = exports.calculateDailyMetrics = exports.getKPITargets = exports.updateKPITargets = exports.getActionItems = exports.deleteActionItem = exports.updateActionItem = exports.createActionItem = exports.getAds = exports.deleteAd = exports.updateAd = exports.createAd = exports.getExpenses = exports.getExpense = exports.upsertExpense = exports.getSales = exports.deleteSale = exports.updateSale = exports.createSale = exports.exportData = exports.stripeWebhook = exports.sendMessage = exports.generateSuggestion = exports.deleteChartPhoto = exports.uploadChartPhoto = exports.deleteChart = exports.updateChart = exports.getCharts = exports.getChart = exports.createChart = exports.cancelAppointment = exports.updateAppointment = exports.createAppointment = exports.addUserToTenant = exports.deleteTenant = exports.updateTenant = exports.addTenant = exports.updateOrganization = exports.createOrganization = void 0;
-exports.migrateToMultiTenant = exports.cancelCustomerAppointment = exports.createCustomerAppointment = exports.getCustomerCharts = exports.getCustomerAppointments = exports.getCustomerByLineUserId = exports.sendAppointmentReminders = exports.sendLineMessage = void 0;
+exports.getExpenseAnalysis = exports.getSalesAnalysis = exports.scheduledMonthlyMetrics = exports.scheduledWeeklyMetrics = exports.scheduledDailyMetrics = exports.getMetrics = exports.calculateDailyMetrics = exports.getKPITargets = exports.updateKPITargets = exports.getActionItems = exports.deleteActionItem = exports.updateActionItem = exports.createActionItem = exports.getAds = exports.deleteAd = exports.updateAd = exports.createAd = exports.getExpenses = exports.getExpense = exports.upsertExpense = exports.getSales = exports.deleteSale = exports.updateSale = exports.createSale = exports.exportData = exports.stripeWebhook = exports.sendMessage = exports.generateSuggestion = exports.deleteChartPhoto = exports.uploadChartPhoto = exports.deleteChart = exports.updateChart = exports.getCharts = exports.getChart = exports.createChart = exports.searchCustomers = exports.getCustomers = exports.getCustomer = exports.deleteCustomer = exports.updateCustomer = exports.createCustomer = exports.cancelAppointment = exports.updateAppointment = exports.createAppointment = exports.addUserToTenant = exports.deleteTenant = exports.updateTenant = exports.addTenant = exports.updateOrganization = exports.createOrganization = void 0;
+exports.migrateToMultiTenant = exports.registerLineCustomer = exports.cancelCustomerAppointment = exports.createCustomerAppointment = exports.getCustomerCharts = exports.getCustomerAppointments = exports.getCustomerByLineUserId = exports.updateLineMessageTemplates = exports.getLineMessageTemplates = exports.sendAppointmentReminders = exports.sendLineMessage = exports.lineWebhook = exports.nbaJob = exports.insightJob = exports.forecastJob = exports.metricsJob = exports.getAdAnalysis = void 0;
 const admin = __importStar(require("firebase-admin"));
 // Initialize Firebase Admin
 admin.initializeApp();
@@ -56,6 +56,13 @@ var appointments_1 = require("./api/appointments");
 Object.defineProperty(exports, "createAppointment", { enumerable: true, get: function () { return appointments_1.createAppointment; } });
 Object.defineProperty(exports, "updateAppointment", { enumerable: true, get: function () { return appointments_1.updateAppointment; } });
 Object.defineProperty(exports, "cancelAppointment", { enumerable: true, get: function () { return appointments_1.cancelAppointment; } });
+var customers_1 = require("./api/customers");
+Object.defineProperty(exports, "createCustomer", { enumerable: true, get: function () { return customers_1.createCustomer; } });
+Object.defineProperty(exports, "updateCustomer", { enumerable: true, get: function () { return customers_1.updateCustomer; } });
+Object.defineProperty(exports, "deleteCustomer", { enumerable: true, get: function () { return customers_1.deleteCustomer; } });
+Object.defineProperty(exports, "getCustomer", { enumerable: true, get: function () { return customers_1.getCustomer; } });
+Object.defineProperty(exports, "getCustomers", { enumerable: true, get: function () { return customers_1.getCustomers; } });
+Object.defineProperty(exports, "searchCustomers", { enumerable: true, get: function () { return customers_1.searchCustomers; } });
 var charts_1 = require("./api/charts");
 Object.defineProperty(exports, "createChart", { enumerable: true, get: function () { return charts_1.createChart; } });
 Object.defineProperty(exports, "getChart", { enumerable: true, get: function () { return charts_1.getChart; } });
@@ -101,10 +108,13 @@ Object.defineProperty(exports, "getMetrics", { enumerable: true, get: function (
 Object.defineProperty(exports, "scheduledDailyMetrics", { enumerable: true, get: function () { return metricsCalculation_1.scheduledDailyMetrics; } });
 Object.defineProperty(exports, "scheduledWeeklyMetrics", { enumerable: true, get: function () { return metricsCalculation_1.scheduledWeeklyMetrics; } });
 Object.defineProperty(exports, "scheduledMonthlyMetrics", { enumerable: true, get: function () { return metricsCalculation_1.scheduledMonthlyMetrics; } });
-var analytics_1 = require("./api/analytics");
-Object.defineProperty(exports, "getSalesAnalysis", { enumerable: true, get: function () { return analytics_1.getSalesAnalysis; } });
-Object.defineProperty(exports, "getExpenseAnalysis", { enumerable: true, get: function () { return analytics_1.getExpenseAnalysis; } });
-Object.defineProperty(exports, "getAdAnalysis", { enumerable: true, get: function () { return analytics_1.getAdAnalysis; } });
+// Analytics APIs (refactored into separate modules)
+var salesAnalysis_1 = require("./api/salesAnalysis");
+Object.defineProperty(exports, "getSalesAnalysis", { enumerable: true, get: function () { return salesAnalysis_1.getSalesAnalysis; } });
+var expenseAnalysis_1 = require("./api/expenseAnalysis");
+Object.defineProperty(exports, "getExpenseAnalysis", { enumerable: true, get: function () { return expenseAnalysis_1.getExpenseAnalysis; } });
+var adAnalysis_1 = require("./api/adAnalysis");
+Object.defineProperty(exports, "getAdAnalysis", { enumerable: true, get: function () { return adAnalysis_1.getAdAnalysis; } });
 // Export scheduled functions
 var metricsJob_1 = require("./scheduled/metricsJob");
 Object.defineProperty(exports, "metricsJob", { enumerable: true, get: function () { return metricsJob_1.metricsJob; } });
@@ -120,6 +130,9 @@ Object.defineProperty(exports, "lineWebhook", { enumerable: true, get: function 
 var lineSendMessage_1 = require("./api/lineSendMessage");
 Object.defineProperty(exports, "sendLineMessage", { enumerable: true, get: function () { return lineSendMessage_1.sendLineMessage; } });
 Object.defineProperty(exports, "sendAppointmentReminders", { enumerable: true, get: function () { return lineSendMessage_1.sendAppointmentReminders; } });
+var lineMessageTemplates_1 = require("./api/lineMessageTemplates");
+Object.defineProperty(exports, "getLineMessageTemplates", { enumerable: true, get: function () { return lineMessageTemplates_1.getLineMessageTemplates; } });
+Object.defineProperty(exports, "updateLineMessageTemplates", { enumerable: true, get: function () { return lineMessageTemplates_1.updateLineMessageTemplates; } });
 // Export customer portal functions (for LIFF)
 var customerPortal_1 = require("./api/customerPortal");
 Object.defineProperty(exports, "getCustomerByLineUserId", { enumerable: true, get: function () { return customerPortal_1.getCustomerByLineUserId; } });
@@ -127,6 +140,7 @@ Object.defineProperty(exports, "getCustomerAppointments", { enumerable: true, ge
 Object.defineProperty(exports, "getCustomerCharts", { enumerable: true, get: function () { return customerPortal_1.getCustomerCharts; } });
 Object.defineProperty(exports, "createCustomerAppointment", { enumerable: true, get: function () { return customerPortal_1.createCustomerAppointment; } });
 Object.defineProperty(exports, "cancelCustomerAppointment", { enumerable: true, get: function () { return customerPortal_1.cancelCustomerAppointment; } });
+Object.defineProperty(exports, "registerLineCustomer", { enumerable: true, get: function () { return customerPortal_1.registerLineCustomer; } });
 // Export migration function (development only)
 var migrateToMultiTenant_1 = require("./api/migrateToMultiTenant");
 Object.defineProperty(exports, "migrateToMultiTenant", { enumerable: true, get: function () { return migrateToMultiTenant_1.migrateToMultiTenant; } });

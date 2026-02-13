@@ -265,12 +265,30 @@ export default function GoogleCalendarSettingsPage() {
     }
   };
 
+  const handleReconnectCalendar = (staffMemberId: string) => {
+    if (!user || !tenantId) {
+      setError("ユーザー情報またはテナント情報が取得できません");
+      return;
+    }
+
+    // OAuth認証フローを開始（既存の連携を更新）
+    const authorizeUrl = `/api/auth/google-calendar/authorize?tenantId=${tenantId}&userId=${staffMemberId}`;
+    window.location.href = authorizeUrl;
+  };
+
   const handleDisconnectCalendar = async (staffMemberId: string) => {
     if (!tenantId) return;
     if (!confirm("Googleカレンダー連携を解除しますか？")) return;
 
     try {
-      // TODO: 連携解除処理を実装
+      const connectionRef = doc(db, `tenants/${tenantId}/googleCalendarConnections`, staffMemberId);
+      await updateDoc(connectionRef, {
+        isActive: false,
+        updatedAt: new Date(),
+      });
+
+      // 連携リストから削除
+      setConnections(connections.filter((c) => c.staffMemberId !== staffMemberId));
       setSuccess("連携を解除しました");
     } catch (err) {
       console.error("Failed to disconnect:", err);
@@ -282,6 +300,17 @@ export default function GoogleCalendarSettingsPage() {
     navigator.clipboard.writeText(text);
     setSuccess("クリップボードにコピーしました");
     setTimeout(() => setSuccess(""), 2000);
+  };
+
+  const handleConnectStaffCalendar = (staffMemberId: string) => {
+    if (!user || !tenantId) {
+      setError("ユーザー情報またはテナント情報が取得できません");
+      return;
+    }
+
+    // OAuth認証フローを開始（スタッフ用）
+    const authorizeUrl = `/api/auth/google-calendar/authorize?tenantId=${tenantId}&userId=${staffMemberId}`;
+    window.location.href = authorizeUrl;
   };
 
   const handleGenerateConnectUrl = async (staffMemberId: string) => {
@@ -613,28 +642,54 @@ export default function GoogleCalendarSettingsPage() {
                           </div>
                           <div className="flex items-center gap-2">
                             {isConnected ? (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleDisconnectCalendar(staff.id)}
-                              >
-                                <Trash2 className="h-4 w-4 mr-1" />
-                                解除
-                              </Button>
+                              <>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleReconnectCalendar(staff.id)}
+                                  className="bg-blue-50 hover:bg-blue-100 border-blue-300"
+                                >
+                                  <RefreshCw className="h-4 w-4 mr-1" />
+                                  再接続
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleDisconnectCalendar(staff.id)}
+                                >
+                                  <Trash2 className="h-4 w-4 mr-1" />
+                                  解除
+                                </Button>
+                              </>
                             ) : (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleGenerateConnectUrl(staff.id)}
-                                disabled={
-                                  !calendarSettings.enabled ||
-                                  !calendarSettings.clientId ||
-                                  generatingUrl === staff.id
-                                }
-                              >
-                                <Link2 className="h-4 w-4 mr-1" />
-                                {generatingUrl === staff.id ? "生成中..." : "連携URLを生成"}
-                              </Button>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  onClick={() => handleConnectStaffCalendar(staff.id)}
+                                  disabled={
+                                    !calendarSettings.enabled ||
+                                    !calendarSettings.clientId
+                                  }
+                                  className="bg-green-600 hover:bg-green-700"
+                                >
+                                  <Calendar className="h-4 w-4 mr-1" />
+                                  今すぐ連携
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleGenerateConnectUrl(staff.id)}
+                                  disabled={
+                                    !calendarSettings.enabled ||
+                                    !calendarSettings.clientId ||
+                                    generatingUrl === staff.id
+                                  }
+                                >
+                                  <Link2 className="h-4 w-4 mr-1" />
+                                  {generatingUrl === staff.id ? "生成中..." : "URL生成"}
+                                </Button>
+                              </div>
                             )}
                           </div>
                         </div>
@@ -645,13 +700,24 @@ export default function GoogleCalendarSettingsPage() {
               </div>
 
               <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                <p className="text-sm text-green-900 font-semibold mb-1">連携手順</p>
-                <ol className="text-sm text-green-800 space-y-1 list-decimal list-inside">
-                  <li>連携したいスタッフの「連携URLを生成」をクリック</li>
-                  <li>自動コピーされたURLをスタッフに送信（LINE/メールなど）</li>
-                  <li>スタッフがURLからGoogleアカウントで認証</li>
-                  <li>連携完了！</li>
-                </ol>
+                <p className="text-sm text-green-900 font-semibold mb-1">連携方法</p>
+                <div className="text-sm text-green-800 space-y-3">
+                  <div>
+                    <p className="font-semibold mb-1">📱 方法1: 今すぐ連携（推奨）</p>
+                    <ul className="list-disc list-inside ml-2 space-y-1">
+                      <li>スタッフが目の前にいる場合</li>
+                      <li>「今すぐ連携」をクリックして即座にOAuth認証</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <p className="font-semibold mb-1">🔗 方法2: URLを送信</p>
+                    <ul className="list-disc list-inside ml-2 space-y-1">
+                      <li>スタッフがリモートの場合</li>
+                      <li>「URL生成」→ 自動コピー → LINE/メールで送信</li>
+                      <li>スタッフが各自で連携</li>
+                    </ul>
+                  </div>
+                </div>
               </div>
 
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">

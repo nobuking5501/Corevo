@@ -7,8 +7,10 @@ import { doc, getDoc, collection, getDocs, query, where } from "firebase/firesto
 import { auth, db } from "@/lib/firebase";
 import { useAuthStore } from "@/stores/auth";
 import { User, Tenant, Organization, UserRole } from "@/types";
+import { isPlatformAdmin } from "@/lib/auth";
 
 const PUBLIC_PATHS = ["/login"];
+const PLATFORM_ADMIN_PATH = "/platform-admin";
 const TENANT_SELECTION_PATH = "/select-tenant";
 const isDev = process.env.NEXT_PUBLIC_APP_ENV === "dev";
 
@@ -54,6 +56,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       try {
         setFirebaseUser(firebaseUser);
+
+        // Check if user is Platform Admin
+        const isAdmin = await isPlatformAdmin(firebaseUser.uid, firebaseUser.email || "");
+        console.log("[AuthProvider] isPlatformAdmin:", isAdmin);
+
+        // Platform Admin: redirect to platform admin page and skip tenant logic
+        if (isAdmin) {
+          console.log("[AuthProvider] Platform Admin detected");
+          setLoading(false);
+          clearTimeout(timeoutId);
+
+          // If on login or root, redirect to platform admin
+          if (pathname === "/login" || pathname === "/") {
+            console.log("[AuthProvider] Redirecting to /platform-admin");
+            router.push(PLATFORM_ADMIN_PATH);
+          }
+          // If already on platform-admin path, do nothing
+          else if (pathname.startsWith(PLATFORM_ADMIN_PATH)) {
+            console.log("[AuthProvider] Already on /platform-admin, staying");
+          }
+          // If on any other path, redirect to platform admin
+          else {
+            console.log("[AuthProvider] Not on platform-admin path, redirecting");
+            router.push(PLATFORM_ADMIN_PATH);
+          }
+          return;
+        }
 
         // Get custom claims (force refresh to get latest claims)
         const tokenResult = await firebaseUser.getIdTokenResult(true);

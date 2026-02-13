@@ -231,10 +231,34 @@ export const sendAppointmentReminders = onCall(
             // サロン名を取得
             const salonName = tenantDoc.data()?.name || "サロン";
 
+            // 顧客名を取得
+            const customerName = customerData?.name || "お客様";
+
+            // メッセージテンプレートを取得
+            const templateDoc = await db
+              .collection(`tenants/${tenantId}/lineSettings`)
+              .doc("messageTemplates")
+              .get();
+
+            let messageBody = "";
+            if (templateDoc.exists && templateDoc.data()?.reminderMessage) {
+              // カスタムテンプレートを使用
+              messageBody = templateDoc.data()?.reminderMessage || "";
+              // 変数を置換
+              messageBody = messageBody
+                .replace(/\{\{customerName\}\}/g, customerName)
+                .replace(/\{\{appointmentDate\}\}/g, appointmentDate)
+                .replace(/\{\{serviceName\}\}/g, serviceName)
+                .replace(/\{\{salonName\}\}/g, salonName);
+            } else {
+              // デフォルトメッセージ（既存の動作を維持）
+              messageBody = `${customerName} 様\n\n明日のご予約のリマインドです。\n\n【予約内容】\n日時: ${appointmentDate}\nサービス: ${serviceName}\n\nご来店をお待ちしております。\n${salonName}`;
+            }
+
             // リマインダーメッセージを送信
             await pushMessage(
               customerData.lineUserId,
-              [createAppointmentReminderMessage(appointmentDate, serviceName, salonName)],
+              [createTextMessage(messageBody)],
               lineConfig.channelAccessToken
             );
 

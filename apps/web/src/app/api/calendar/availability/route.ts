@@ -21,6 +21,106 @@ interface TimeSlot {
   end: string;
 }
 
+interface FirestoreShift {
+  staffId: string;
+  staffName?: string;
+  date: string; // YYYY-MM-DD
+  startTime: string; // HH:mm
+  endTime: string; // HH:mm
+}
+
+/**
+ * Firestore shiftsから空き枠を計算（Googleカレンダー連携がない場合のフォールバック）
+ */
+async function getAvailabilityFromFirestoreShifts(
+  tenantId: string,
+  date: string,
+  serviceDuration: number,
+  staffId?: string
+): Promise<Array<TimeSlot & { staffId: string; staffName: string }>> {
+  const targetDateStr = new Date(date).toISOString().split("T")[0]; // YYYY-MM-DD
+  const shiftsSnapshot = await db
+    .collection(`tenants/${tenantId}/shifts`)
+    .where("date", "==", targetDateStr)
+    .get();
+
+  if (shiftsSnapshot.empty) {
+    return [];
+  }
+
+  const allAvailableSlots: Array<TimeSlot & { staffId: string; staffName: string }> = [];
+
+  for (const shiftDoc of shiftsSnapshot.docs) {
+    const shift = shiftDoc.data() as FirestoreShift;
+
+    // staffIdが指定されている場合はフィルタ
+    if (staffId && shift.staffId !== staffId) {
+      continue;
+    }
+
+    // シフトの開始・終了時刻をISO文字列に変換
+    const shiftStart = new Date(`${shift.date}T${shift.startTime}:00`);
+    const shiftEnd = new Date(`${shift.date}T${shift.endTime}:00`);
+
+    // Firestoreから既存の予約を取得
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const appointmentsSnapshot = await db
+      .collection(`tenants/${tenantId}/appointments`)
+      .where("staffId", "==", shift.staffId)
+      .where("startAt", ">=", startOfDay)
+      .where("startAt", "<", endOfDay)
+      .where("status", "in", ["scheduled", "confirmed"])
+      .get();
+
+    const busySlots: TimeSlot[] = appointmentsSnapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        start: data.startAt.toDate().toISOString(),
+        end: data.endAt.toDate().toISOString(),
+      };
+    });
+
+    // 空き時間を計算
+    let currentTime = new Date(shiftStart);
+
+    while (currentTime < shiftEnd) {
+      const slotEnd = new Date(currentTime.getTime() + serviceDuration * 60 * 1000);
+
+      if (slotEnd > shiftEnd) break;
+
+      // この時間帯が予約と重ならないかチェック
+      const isAvailable = !busySlots.some((busy) => {
+        const busyStart = new Date(busy.start);
+        const busyEnd = new Date(busy.end);
+
+        return (
+          (currentTime >= busyStart && currentTime < busyEnd) ||
+          (slotEnd > busyStart && slotEnd <= busyEnd) ||
+          (currentTime <= busyStart && slotEnd >= busyEnd)
+        );
+      });
+
+      if (isAvailable) {
+        allAvailableSlots.push({
+          start: currentTime.toISOString(),
+          end: slotEnd.toISOString(),
+          staffId: shift.staffId,
+          staffName: shift.staffName || "スタッフ",
+        });
+      }
+
+      // 次の時間帯（30分刻み）
+      currentTime = new Date(currentTime.getTime() + 30 * 60 * 1000);
+    }
+  }
+
+  return allAvailableSlots;
+}
+
 /**
  * 全スタッフの空き枠を統合して返す
  */
@@ -38,6 +138,56 @@ async function getAllStaffAvailability(
     const connectionsSnapshot = await db
       .collection(`tenants/${tenantId}/googleCalendarConnections`)
       .get();
+
+    // Googleカレンダー連携がない場合はFirestore shiftsにフォールバック
+    if (connectionsSnapshot.empty) {
+      console.log("🔄 [Availability API] Googleカレンダー連携なし。Firestore shiftsを使用します");
+      const slotsFromFirestore = await getAvailabilityFromFirestoreShifts(
+        tenantId,
+        date,
+        serviceDuration
+      );
+
+      // 時刻順にソート
+      slotsFromFirestore.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+
+      // 重複を削除
+      const uniqueSlots: TimeSlot[] = [];
+      const seenTimes = new Set<string>();
+
+      for (const slot of slotsFromFirestore) {
+        const timeKey = new Date(slot.start).toISOString();
+        if (!seenTimes.has(timeKey)) {
+          seenTimes.add(timeKey);
+          uniqueSlots.push({
+            start: slot.start,
+            end: slot.end,
+          });
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        date,
+        staffId: null,
+        allStaff: true,
+        serviceDuration,
+        source: "firestore", // デバッグ用
+        availableSlots: uniqueSlots.map((slot) => ({
+          start: slot.start,
+          end: slot.end,
+          startTime: new Date(slot.start).toLocaleTimeString("ja-JP", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          endTime: new Date(slot.end).toLocaleTimeString("ja-JP", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        })),
+        totalAvailableSlots: uniqueSlots.length,
+      });
+    }
 
     const allAvailableSlots: Array<TimeSlot & { staffId: string; staffName: string }> = [];
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CALENDAR_CLIENT_ID;
@@ -260,11 +410,44 @@ export async function POST(request: NextRequest) {
 
     const connectionDoc = await connectionRef.get();
 
+    // Googleカレンダー連携がない場合はFirestore shiftsにフォールバック
     if (!connectionDoc.exists) {
-      return NextResponse.json(
-        { error: "Google Calendar connection not found" },
-        { status: 404 }
+      console.log(`🔄 [Availability API] スタッフ ${staffId} のGoogleカレンダー連携なし。Firestore shiftsを使用します`);
+      const slotsFromFirestore = await getAvailabilityFromFirestoreShifts(
+        tenantId,
+        date,
+        serviceDuration,
+        staffId
       );
+
+      // 時刻順にソート
+      slotsFromFirestore.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+
+      const availableSlots: TimeSlot[] = slotsFromFirestore.map(slot => ({
+        start: slot.start,
+        end: slot.end,
+      }));
+
+      return NextResponse.json({
+        success: true,
+        date,
+        staffId,
+        serviceDuration,
+        source: "firestore", // デバッグ用
+        availableSlots: availableSlots.map((slot) => ({
+          start: slot.start,
+          end: slot.end,
+          startTime: new Date(slot.start).toLocaleTimeString("ja-JP", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          endTime: new Date(slot.end).toLocaleTimeString("ja-JP", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        })),
+        totalAvailableSlots: availableSlots.length,
+      });
     }
 
     const connectionData = connectionDoc.data();

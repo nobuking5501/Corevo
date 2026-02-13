@@ -7,6 +7,7 @@ import { signOut, onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useAuthStore } from "@/stores/auth";
 import { Button } from "@/components/ui/button";
+import { TopLoadingBar } from "./TopLoadingBar";
 
 const navigation = [
   { name: "ダッシュボード", href: "/dashboard" },
@@ -88,9 +89,11 @@ export function MainLayout({ children }: MainLayoutProps) {
   }
 
   return (
-    <div className="flex h-screen bg-gray-100">
-      {/* Sidebar */}
-      <div className="w-64 bg-white shadow-sm flex flex-col">
+    <>
+      <TopLoadingBar />
+      <div className="flex h-screen bg-gray-100">
+        {/* Sidebar */}
+        <div className="w-64 bg-white shadow-sm flex flex-col">
         {/* Logo */}
         <div className="flex h-16 items-center justify-center border-b border-gray-200 px-4">
           <h1 className="text-xl font-bold text-blue-500">Corevo</h1>
@@ -185,6 +188,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                 <Link
                   key={item.name}
                   href={item.href}
+                  prefetch={true}
                   className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                     isActive
                       ? "bg-blue-500 text-white"
@@ -220,6 +224,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           {children}
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

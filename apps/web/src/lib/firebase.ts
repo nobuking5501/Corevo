@@ -1,8 +1,8 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { getAuth, connectAuthEmulator } from "firebase/auth";
+import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
-import { getFunctions } from "firebase/functions";
+import { getFunctions, connectFunctionsEmulator } from "firebase/functions";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -26,3 +26,28 @@ export const storage = firebaseConfig.storageBucket
   : null;
 
 export const functions = getFunctions(app, "asia-northeast1");
+
+// Emulator接続（開発環境のみ）
+if (process.env.NEXT_PUBLIC_APP_ENV === "dev") {
+  if (typeof window !== "undefined") {
+    // クライアントサイドのみで実行（SSRエラー回避）
+    try {
+      // 既に接続済みの場合はスキップ（Hot Reloadエラー回避）
+      // @ts-ignore - _settingsは内部プロパティ
+      if (!auth._settings?.appVerificationDisabledForTesting) {
+        connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
+      }
+      // @ts-ignore - _settingsは内部プロパティ
+      if (!db._settings?.host?.includes("127.0.0.1")) {
+        connectFirestoreEmulator(db, "127.0.0.1", 8080);
+      }
+      // @ts-ignore - _urlは内部プロパティ
+      if (!functions._url || (typeof functions._url === "string" && !functions._url.includes("127.0.0.1"))) {
+        connectFunctionsEmulator(functions, "127.0.0.1", 5001);
+      }
+    } catch (error) {
+      // 既に接続済みの場合はエラーを無視
+      console.log("[Firebase] Emulator already connected or error:", error);
+    }
+  }
+}

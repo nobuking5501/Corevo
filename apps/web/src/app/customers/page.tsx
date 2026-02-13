@@ -1,53 +1,40 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, getDocs, addDoc, serverTimestamp, orderBy } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
+import { useRouter } from "next/navigation";
+import { db, auth } from "@/lib/firebase";
+import { collection, query, getDocs, deleteDoc, doc, orderBy as firestoreOrderBy } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { Customer } from "@/types";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
-import { Search, Plus, Phone, Mail, Calendar } from "lucide-react";
-import { Textarea } from "@/components/ui/textarea";
+import { Search, Plus, Phone, Mail, Calendar, Edit, Trash2, Eye } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const isDev = process.env.NEXT_PUBLIC_APP_ENV === "dev";
 
 export default function CustomersPage() {
+  const router = useRouter();
   const [tenantId, setTenantId] = useState<string | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Form state
-  const [formData, setFormData] = useState({
-    name: "",
-    kana: "",
-    email: "",
-    phone: "",
-    marketingConsent: false,
-    photoConsent: false,
-    hasDisability: false,
-    disabilityType: "",
-    specialAccommodations: "",
-    emergencyContactName: "",
-    emergencyContactPhone: "",
-    emergencyContactRelationship: "",
-  });
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Get tenant ID from Firebase Auth
   useEffect(() => {
@@ -84,34 +71,43 @@ export default function CustomersPage() {
   useEffect(() => {
     if (!tenantId) return;
 
-    const loadCustomers = async () => {
-      try {
-        const customersRef = collection(db, `tenants/${tenantId}/customers`);
-        const customersQuery = query(customersRef, orderBy("createdAt", "desc"));
-        const snapshot = await getDocs(customersQuery);
-        const customersData = snapshot.docs.map((doc) => ({
-          ...doc.data(),
-          id: doc.id,
-          createdAt: doc.data().createdAt?.toDate(),
-          updatedAt: doc.data().updatedAt?.toDate(),
-          lastVisit: doc.data().lastVisit?.toDate(),
-        })) as Customer[];
-        setCustomers(customersData);
-        setFilteredCustomers(customersData);
-      } catch (error) {
-        console.error("Error loading customers:", error);
-        toast({
-          variant: "destructive",
-          title: "顧客データの読み込みエラー",
-          description: "顧客データの取得に失敗しました",
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadCustomers();
   }, [tenantId]);
+
+  const loadCustomers = async () => {
+    if (!tenantId) return;
+
+    setLoading(true);
+    try {
+      const customersRef = collection(db, `tenants/${tenantId}/customers`);
+      const q = query(customersRef, firestoreOrderBy("createdAt", "desc"));
+      const snapshot = await getDocs(q);
+
+      const customersData = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          createdAt: data.createdAt?.toDate(),
+          updatedAt: data.updatedAt?.toDate(),
+          lastVisit: data.lastVisit?.toDate(),
+          birthday: data.birthday?.toDate(),
+        } as Customer;
+      });
+
+      setCustomers(customersData);
+      setFilteredCustomers(customersData);
+    } catch (error: any) {
+      console.error("Error loading customers:", error);
+      toast({
+        variant: "destructive",
+        title: "顧客データの読み込みエラー",
+        description: error.message || "顧客データの取得に失敗しました",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Search customers
   useEffect(() => {
@@ -131,97 +127,67 @@ export default function CustomersPage() {
     setFilteredCustomers(filtered);
   }, [searchTerm, customers]);
 
-  // Add new customer
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!tenantId) return;
+  // Handle delete customer
+  const handleDeleteClick = (customer: Customer) => {
+    setCustomerToDelete(customer);
+    setDeleteDialogOpen(true);
+  };
 
-    setIsSubmitting(true);
+  const confirmDelete = async () => {
+    if (!customerToDelete || !tenantId) return;
 
+    setIsDeleting(true);
     try {
-      const customersRef = collection(db, `tenants/${tenantId}/customers`);
-
-      // Build disability object if hasDisability is checked
-      const disabilityData = formData.hasDisability
-        ? {
-            hasDisability: true,
-            disabilityType: formData.disabilityType || undefined,
-            specialAccommodations: formData.specialAccommodations || undefined,
-            emergencyContact:
-              formData.emergencyContactName && formData.emergencyContactPhone
-                ? {
-                    name: formData.emergencyContactName,
-                    phone: formData.emergencyContactPhone,
-                    relationship: formData.emergencyContactRelationship || "",
-                  }
-                : undefined,
-          }
-        : undefined;
-
-      await addDoc(customersRef, {
-        tenantId: tenantId,
-        name: formData.name,
-        kana: formData.kana,
-        email: formData.email || null,
-        phone: formData.phone || null,
-        consent: {
-          marketing: formData.marketingConsent,
-          photoUsage: formData.photoConsent,
-        },
-        disability: disabilityData,
-        preferences: [],
-        tags: [],
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      const customerRef = doc(db, `tenants/${tenantId}/customers`, customerToDelete.id);
+      await deleteDoc(customerRef);
 
       toast({
-        title: "顧客を追加しました",
-        description: `${formData.name}さんを登録しました`,
+        title: "顧客を削除しました",
+        description: `${customerToDelete.name}さんを削除しました`,
       });
 
-      // Reset form and close dialog
-      setFormData({
-        name: "",
-        kana: "",
-        email: "",
-        phone: "",
-        marketingConsent: false,
-        photoConsent: false,
-        hasDisability: false,
-        disabilityType: "",
-        specialAccommodations: "",
-        emergencyContactName: "",
-        emergencyContactPhone: "",
-        emergencyContactRelationship: "",
-      });
-      setIsDialogOpen(false);
-
-      // Reload customers
-      const customersQuery = query(
-        collection(db, `tenants/${tenantId}/customers`),
-        orderBy("createdAt", "desc")
-      );
-      const snapshot = await getDocs(customersQuery);
-      const customersData = snapshot.docs.map((doc) => ({
-        ...doc.data(),
-        id: doc.id,
-        createdAt: doc.data().createdAt?.toDate(),
-        updatedAt: doc.data().updatedAt?.toDate(),
-        lastVisit: doc.data().lastVisit?.toDate(),
-      })) as Customer[];
-      setCustomers(customersData);
-      setFilteredCustomers(customersData);
-    } catch (error) {
-      console.error("Error adding customer:", error);
+      setDeleteDialogOpen(false);
+      setCustomerToDelete(null);
+      await loadCustomers();
+    } catch (error: any) {
+      console.error("Error deleting customer:", error);
       toast({
         variant: "destructive",
-        title: "顧客追加エラー",
-        description: "顧客の登録に失敗しました",
+        title: "顧客削除エラー",
+        description: error.message || "顧客の削除に失敗しました",
       });
     } finally {
-      setIsSubmitting(false);
+      setIsDeleting(false);
     }
+  };
+
+  const handleViewCustomer = (customerId: string) => {
+    router.push(`/customers/${customerId}`);
+  };
+
+  const handleEditCustomer = (customerId: string) => {
+    router.push(`/customers/${customerId}?edit=true`);
+  };
+
+  const formatBirthday = (birthday?: Date) => {
+    if (!birthday) return null;
+    return new Date(birthday).toLocaleDateString("ja-JP", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  };
+
+  const calculateAge = (birthday?: Date) => {
+    if (!birthday) return null;
+    const today = new Date();
+    const birthDate = new Date(birthday);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age;
   };
 
   if (loading) {
@@ -240,7 +206,7 @@ export default function CustomersPage() {
             <h1 className="text-3xl font-bold">顧客管理</h1>
             <p className="text-gray-500">顧客情報と来店履歴</p>
           </div>
-          <Button onClick={() => setIsDialogOpen(true)}>
+          <Button onClick={() => router.push("/customers/new")}>
             <Plus className="mr-2 h-4 w-4" />
             新規顧客
           </Button>
@@ -271,13 +237,30 @@ export default function CustomersPage() {
                 {filteredCustomers.map((customer) => (
                   <div
                     key={customer.id}
-                    className="border rounded-lg p-4 hover:bg-gray-50 transition-colors cursor-pointer"
+                    className="border rounded-lg p-4 hover:bg-gray-50 transition-colors"
                   >
                     <div className="flex items-start justify-between">
-                      <div className="flex-1">
+                      <div
+                        className="flex-1 cursor-pointer"
+                        onClick={() => handleViewCustomer(customer.id)}
+                      >
                         <div className="flex items-center gap-3">
                           <h3 className="font-semibold text-lg">{customer.name}</h3>
                           <span className="text-sm text-gray-500">({customer.kana})</span>
+                          {customer.birthday && (
+                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                              {calculateAge(customer.birthday)}歳
+                            </span>
+                          )}
+                          {customer.gender && (
+                            <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
+                              {customer.gender === "male"
+                                ? "男性"
+                                : customer.gender === "female"
+                                ? "女性"
+                                : "その他"}
+                            </span>
+                          )}
                         </div>
                         <div className="mt-2 space-y-1">
                           {customer.phone && (
@@ -292,13 +275,45 @@ export default function CustomersPage() {
                               {customer.email}
                             </div>
                           )}
+                          {customer.birthday && (
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                              <Calendar className="h-3 w-3" />
+                              生年月日: {formatBirthday(customer.birthday)}
+                            </div>
+                          )}
                           {customer.lastVisit && (
                             <div className="flex items-center gap-2 text-sm text-gray-600">
                               <Calendar className="h-3 w-3" />
-                              最終来店: {customer.lastVisit.toLocaleDateString("ja-JP")}
+                              最終来店: {new Date(customer.lastVisit).toLocaleDateString("ja-JP")}
                             </div>
                           )}
                         </div>
+                      </div>
+                      <div className="flex items-center gap-2 ml-4">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleViewCustomer(customer.id)}
+                        >
+                          <Eye className="h-4 w-4 mr-1" />
+                          詳細
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditCustomer(customer.id)}
+                        >
+                          <Edit className="h-4 w-4 mr-1" />
+                          編集
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDeleteClick(customer)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-1 text-red-500" />
+                          削除
+                        </Button>
                       </div>
                     </div>
                   </div>
@@ -308,193 +323,31 @@ export default function CustomersPage() {
           </CardContent>
         </Card>
 
-        {/* Add Customer Dialog */}
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle>新規顧客登録</DialogTitle>
-              <DialogDescription>新しい顧客情報を入力してください</DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleSubmit}>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">
-                    氏名 <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    id="name"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    required
-                    placeholder="山田 太郎"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="kana">
-                    カナ <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    id="kana"
-                    value={formData.kana}
-                    onChange={(e) => setFormData({ ...formData, kana: e.target.value })}
-                    required
-                    placeholder="ヤマダ タロウ"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phone">電話番号</Label>
-                  <Input
-                    id="phone"
-                    type="tel"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    placeholder="090-1234-5678"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">メールアドレス</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    placeholder="example@email.com"
-                  />
-                </div>
-                <div className="space-y-3 pt-2">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="marketing"
-                      checked={formData.marketingConsent}
-                      onChange={(e) =>
-                        setFormData({ ...formData, marketingConsent: e.target.checked })
-                      }
-                      className="h-4 w-4"
-                    />
-                    <Label htmlFor="marketing" className="font-normal cursor-pointer">
-                      マーケティング配信に同意
-                    </Label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="photo"
-                      checked={formData.photoConsent}
-                      onChange={(e) =>
-                        setFormData({ ...formData, photoConsent: e.target.checked })
-                      }
-                      className="h-4 w-4"
-                    />
-                    <Label htmlFor="photo" className="font-normal cursor-pointer">
-                      写真利用に同意
-                    </Label>
-                  </div>
-                </div>
-
-                <div className="border-t pt-4 mt-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <input
-                      type="checkbox"
-                      id="hasDisability"
-                      checked={formData.hasDisability}
-                      onChange={(e) =>
-                        setFormData({ ...formData, hasDisability: e.target.checked })
-                      }
-                      className="h-4 w-4"
-                    />
-                    <Label htmlFor="hasDisability" className="font-medium cursor-pointer">
-                      障害者情報の登録
-                    </Label>
-                  </div>
-
-                  {formData.hasDisability && (
-                    <div className="space-y-3 pl-6 border-l-2 border-blue-200">
-                      <div className="space-y-2">
-                        <Label htmlFor="disabilityType">障害の種類</Label>
-                        <Input
-                          id="disabilityType"
-                          value={formData.disabilityType}
-                          onChange={(e) =>
-                            setFormData({ ...formData, disabilityType: e.target.value })
-                          }
-                          placeholder="例: 視覚障害、聴覚障害、身体障害など"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="specialAccommodations">特別な配慮事項</Label>
-                        <Textarea
-                          id="specialAccommodations"
-                          value={formData.specialAccommodations}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              specialAccommodations: e.target.value,
-                            })
-                          }
-                          placeholder="施術時に必要な配慮や注意事項を入力してください"
-                          rows={3}
-                        />
-                      </div>
-                      <div className="border-t pt-3 mt-3">
-                        <Label className="text-sm font-medium mb-2 block">緊急連絡先</Label>
-                        <div className="space-y-2">
-                          <Input
-                            id="emergencyContactName"
-                            value={formData.emergencyContactName}
-                            onChange={(e) =>
-                              setFormData({
-                                ...formData,
-                                emergencyContactName: e.target.value,
-                              })
-                            }
-                            placeholder="緊急連絡先の氏名"
-                          />
-                          <Input
-                            id="emergencyContactPhone"
-                            type="tel"
-                            value={formData.emergencyContactPhone}
-                            onChange={(e) =>
-                              setFormData({
-                                ...formData,
-                                emergencyContactPhone: e.target.value,
-                              })
-                            }
-                            placeholder="緊急連絡先の電話番号"
-                          />
-                          <Input
-                            id="emergencyContactRelationship"
-                            value={formData.emergencyContactRelationship}
-                            onChange={(e) =>
-                              setFormData({
-                                ...formData,
-                                emergencyContactRelationship: e.target.value,
-                              })
-                            }
-                            placeholder="続柄（例: 家族、介護者など）"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsDialogOpen(false)}
-                  disabled={isSubmitting}
-                >
-                  キャンセル
-                </Button>
-                <Button type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? "登録中..." : "登録"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>顧客を削除しますか？</AlertDialogTitle>
+              <AlertDialogDescription>
+                {customerToDelete &&
+                  `${customerToDelete.name}さんの情報を削除します。この操作は取り消せません。`}
+                <br />
+                <br />
+                ※ 予定されている予約がある場合は削除できません。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeleting}>キャンセル</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={confirmDelete}
+                disabled={isDeleting}
+                className="bg-red-500 hover:bg-red-600"
+              >
+                {isDeleting ? "削除中..." : "削除"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </MainLayout>
   );

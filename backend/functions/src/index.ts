@@ -12,6 +12,7 @@ export { updateTenant } from "./api/updateTenant";
 export { deleteTenant } from "./api/deleteTenant";
 export { addUserToTenant } from "./api/addUserToTenant";
 export { createAppointment, updateAppointment, cancelAppointment } from "./api/appointments";
+export { createCustomer, updateCustomer, deleteCustomer, getCustomer, getCustomers, searchCustomers } from "./api/customers";
 export { createChart, getChart, getCharts, updateChart, deleteChart } from "./api/charts";
 export { uploadChartPhoto, deleteChartPhoto } from "./api/uploadChartPhoto";
 export { generateSuggestion, sendMessage } from "./api/ai";
@@ -31,7 +32,10 @@ export {
   scheduledWeeklyMetrics,
   scheduledMonthlyMetrics
 } from "./api/metricsCalculation";
-export { getSalesAnalysis, getExpenseAnalysis, getAdAnalysis } from "./api/analytics";
+// Analytics APIs (refactored into separate modules)
+export { getSalesAnalysis } from "./api/salesAnalysis";
+export { getExpenseAnalysis } from "./api/expenseAnalysis";
+export { getAdAnalysis } from "./api/adAnalysis";
 
 // Export scheduled functions
 export { metricsJob } from "./scheduled/metricsJob";
@@ -42,6 +46,7 @@ export { nbaJob } from "./scheduled/nbaJob";
 // Export LINE integration functions
 export { lineWebhook } from "./api/lineWebhook";
 export { sendLineMessage, sendAppointmentReminders } from "./api/lineSendMessage";
+export { getLineMessageTemplates, updateLineMessageTemplates } from "./api/lineMessageTemplates";
 
 // Export customer portal functions (for LIFF)
 export {

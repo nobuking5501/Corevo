@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Corevo API テスト</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        .api-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        pre {
+            background: #f4f4f4;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            max-height: 400px;
+        }
+        .success { color: #4CAF50; }
+        .error { color: #f44336; }
+        input, textarea {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Corevo API テスト</h1>
+        <p>Firebase Emulator (http://localhost:5001) に接続してAPIをテストします</p>
+
+        <!-- 顧客管理API -->
+        <div class="api-section">
+            <h2>📋 顧客管理API</h2>
+            
+            <h3>createCustomer - 顧客作成</h3>
+            <input type="text" id="tenantId" placeholder="テナントID (例: test-tenant-001)" value="test-tenant-001">
+            <input type="text" id="customerName" placeholder="顧客名 (例: 山田太郎)" value="山田太郎">
+            <input type="text" id="customerEmail" placeholder="メールアドレス" value="yamada@example.com">
+            <input type="text" id="customerPhone" placeholder="電話番号" value="090-1234-5678">
+            <button onclick="createCustomer()">顧客を作成</button>
+            
+            <h3>getCustomers - 顧客一覧取得</h3>
+            <button onclick="getCustomers()">顧客一覧を取得</button>
+            
+            <h3>searchCustomers - 顧客検索</h3>
+            <input type="text" id="searchQuery" placeholder="検索キーワード" value="山田">
+            <button onclick="searchCustomers()">顧客を検索</button>
+        </div>
+
+        <!-- 分析API -->
+        <div class="api-section">
+            <h2>📊 分析API</h2>
+            
+            <h3>getSalesAnalysis - 売上分析</h3>
+            <button onclick="getSalesAnalysis()">売上分析を取得</button>
+            
+            <h3>getExpenseAnalysis - 経費分析</h3>
+            <button onclick="getExpenseAnalysis()">経費分析を取得</button>
+            
+            <h3>getAdAnalysis - 広告分析</h3>
+            <button onclick="getAdAnalysis()">広告分析を取得</button>
+        </div>
+
+        <!-- 結果表示 -->
+        <div class="api-section">
+            <h2>📝 実行結果</h2>
+            <pre id="result">ここに結果が表示されます</pre>
+        </div>
+    </div>
+
+    <script>
+        const PROJECT_ID = 'your-project-id'; // プロジェクトIDに置き換えてください
+        const BASE_URL = `http://localhost:5001/${PROJECT_ID}/asia-northeast1`;
+
+        function showResult(data, isError = false) {
+            const resultEl = document.getElementById('result');
+            resultEl.className = isError ? 'error' : 'success';
+            resultEl.textContent = JSON.stringify(data, null, 2);
+        }
+
+        async function callAPI(endpoint, data) {
+            try {
+                const response = await fetch(`${BASE_URL}/${endpoint}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ data })
+                });
+                
+                const result = await response.json();
+                showResult(result);
+            } catch (error) {
+                showResult({ error: error.message }, true);
+            }
+        }
+
+        async function createCustomer() {
+            const data = {
+                tenantId: document.getElementById('tenantId').value,
+                name: document.getElementById('customerName').value,
+                email: document.getElementById('customerEmail').value,
+                phone: document.getElementById('customerPhone').value,
+                tags: ["テスト"],
+                consent: {
+                    marketing: true,
+                    photoUsage: false
+                }
+            };
+            await callAPI('createCustomer', data);
+        }
+
+        async function getCustomers() {
+            const data = {
+                tenantId: document.getElementById('tenantId').value,
+                limit: 10
+            };
+            await callAPI('getCustomers', data);
+        }
+
+        async function searchCustomers() {
+            const data = {
+                tenantId: document.getElementById('tenantId').value,
+                query: document.getElementById('searchQuery').value,
+                searchBy: "name"
+            };
+            await callAPI('searchCustomers', data);
+        }
+
+        async function getSalesAnalysis() {
+            const data = {
+                tenantId: document.getElementById('tenantId').value,
+                startDate: "2026-01-01",
+                endDate: "2026-01-31"
+            };
+            await callAPI('getSalesAnalysis', data);
+        }
+
+        async function getExpenseAnalysis() {
+            const data = {
+                tenantId: document.getElementById('tenantId').value,
+                startMonth: "2026-01",
+                endMonth: "2026-01"
+            };
+            await callAPI('getExpenseAnalysis', data);
+        }
+
+        async function getAdAnalysis() {
+            const data = {
+                tenantId: document.getElementById('tenantId').value,
+                startMonth: "2026-01",
+                endMonth: "2026-01"
+            };
+            await callAPI('getAdAnalysis', data);
+        }
+    </script>
+</body>
+</html>

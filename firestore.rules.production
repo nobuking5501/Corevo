@@ -1,134 +1,206 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper function: Check if user is authenticated
+
+    // ==================== Helper Functions ====================
+
+    // Check if user is authenticated
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    // Helper function: Check if user has access to organization
-    function hasOrganizationAccess(organizationId) {
-      return isAuthenticated() &&
-             request.auth.token.organizationId == organizationId;
+    // Get user's organization ID from custom claims
+    function getOrganizationId() {
+      return request.auth.token.organizationId;
     }
 
-    // Helper function: Check if user has access to tenant
+    // Get user's accessible tenant IDs from custom claims
+    function getTenantIds() {
+      return request.auth.token.tenantIds;
+    }
+
+    // Get user's roles from custom claims
+    function getRoles() {
+      return request.auth.token.roles;
+    }
+
+    // Check if user has access to a specific tenant
     function hasTenantAccess(tenantId) {
-      return isAuthenticated() &&
-             tenantId in request.auth.token.tenantIds;
+      return isAuthenticated() && tenantId in getTenantIds();
     }
 
-    // Helper function: Check if user has specific role in tenant (from custom claims)
-    function hasRole(tenantId, role) {
-      return hasTenantAccess(tenantId) &&
-             request.auth.token.roles[tenantId] == role;
+    // Check if user is owner of the organization
+    function isOwner(tenantId) {
+      return isAuthenticated() && getRoles()[tenantId] == 'owner';
     }
 
-    // Helper function: Check if user is owner or manager of tenant
+    // Check if user is manager or owner
     function isManagerOrOwner(tenantId) {
-      return hasTenantAccess(tenantId) &&
-             (request.auth.token.roles[tenantId] == 'owner' ||
-              request.auth.token.roles[tenantId] == 'manager');
+      return isAuthenticated() &&
+             (getRoles()[tenantId] == 'owner' || getRoles()[tenantId] == 'manager');
     }
 
-    // Helper function: Check if user is owner, manager, or accountant
-    function canManageFinances(tenantId) {
-      return hasTenantAccess(tenantId) &&
-             (request.auth.token.roles[tenantId] == 'owner' ||
-              request.auth.token.roles[tenantId] == 'manager' ||
-              request.auth.token.roles[tenantId] == 'accountant');
+    // Check if user is staff, manager, or owner
+    function isStaffOrAbove(tenantId) {
+      return isAuthenticated() &&
+             (getRoles()[tenantId] in ['owner', 'manager', 'staff']);
     }
 
-    // Organizations - users can read their own organization
-    match /organizations/{organizationId} {
-      allow read: if hasOrganizationAccess(organizationId);
-      allow write: if false; // Only functions can write
-
-      // Tenants under organization
-      match /tenants/{tenantId} {
-        allow read: if hasOrganizationAccess(organizationId);
-        allow write: if false; // Only functions can write
-      }
+    // Check if the document belongs to the user's tenant
+    function belongsToUserTenant(tenantId) {
+      return hasTenantAccess(tenantId);
     }
 
-    // Root tenants collection - read only for authenticated users with access
+    // ==================== Organizations ====================
+
+    match /organizations/{orgId} {
+      // Read: Users in the organization
+      allow read: if isAuthenticated() && getOrganizationId() == orgId;
+
+      // Write: Owner only
+      allow create, update, delete: if isAuthenticated() &&
+                                        getOrganizationId() == orgId &&
+                                        request.auth.token.roles[orgId] == 'owner';
+    }
+
+    // ==================== Tenants ====================
+
     match /tenants/{tenantId} {
+      // Read: Users with access to this tenant
       allow read: if hasTenantAccess(tenantId);
-      allow write: if false; // Only functions can write
-    }
 
-    // Tenant sub-collections
-    match /tenants/{tenantId}/{collection}/{docId} {
-      // Users collection
-      allow read: if hasTenantAccess(tenantId);
-      allow create: if false; // Only functions can create users
+      // Create: Owner only
+      allow create: if isAuthenticated() &&
+                       request.auth.token.roles[resource.data.organizationId] == 'owner';
+
+      // Update, Delete: Manager or Owner
       allow update, delete: if isManagerOrOwner(tenantId);
-
-      // Customers - read/write for authenticated tenant users
-      allow read, write: if hasTenantAccess(tenantId) && collection == 'customers';
-
-      // Appointments - read/write for authenticated tenant users
-      allow read, write: if hasTenantAccess(tenantId) && collection == 'appointments';
-
-      // Services - read/write for managers and owners
-      allow read: if hasTenantAccess(tenantId) && collection == 'services';
-      allow write: if isManagerOrOwner(tenantId) && collection == 'services';
-
-      // Charts (medical records) - read/write for staff
-      allow read, write: if hasTenantAccess(tenantId) && collection == 'charts';
-
-      // Messages - read only
-      allow read: if hasTenantAccess(tenantId) && collection == 'messages';
-      allow write: if false; // Only functions can write
-
-      // AI Suggestions - read for all, approve for managers
-      allow read: if hasTenantAccess(tenantId) && collection == 'ai_suggestions';
-      allow update: if isManagerOrOwner(tenantId) &&
-                      collection == 'ai_suggestions' &&
-                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approved', 'approvedBy', 'approvedAt']);
-      allow create, delete: if false; // Only functions
-
-      // Metrics - read only
-      allow read: if hasTenantAccess(tenantId) && collection == 'metrics';
-      allow write: if false; // Only functions can write
-
-      // Forecasts - read only
-      allow read: if hasTenantAccess(tenantId) && collection == 'forecasts';
-      allow write: if false; // Only functions can write
-
-      // Insights - read only
-      allow read: if hasTenantAccess(tenantId) && collection == 'insights';
-      allow write: if false; // Only functions can write
-
-      // Audit logs - read only for owners
-      allow read: if hasRole(tenantId, 'owner') && collection == 'audit_logs';
-      allow write: if false; // Only functions can write
-
-      // Settings - read for all, write for owners only
-      allow read: if hasTenantAccess(tenantId) && collection == 'settings';
-      allow write: if hasRole(tenantId, 'owner') && collection == 'settings';
-
-      // Sales - staff can read their own, managers/owners/accountants can read/write all
-      allow read: if hasTenantAccess(tenantId) && collection == 'sales' &&
-                     (isManagerOrOwner(tenantId) || canManageFinances(tenantId) ||
-                      resource.data.staffId == request.auth.uid);
-      allow write: if canManageFinances(tenantId) && collection == 'sales';
-
-      // Expenses - owner/manager/accountant only
-      allow read, write: if canManageFinances(tenantId) && collection == 'expenses';
-
-      // Ads - owner/manager only
-      allow read, write: if isManagerOrOwner(tenantId) && collection == 'ads';
-
-      // Action Items - read for all, write for managers/owners
-      allow read: if hasTenantAccess(tenantId) && collection == 'action_items';
-      allow write: if isManagerOrOwner(tenantId) && collection == 'action_items';
-
-      // KPI Targets - owner/manager only
-      allow read, write: if isManagerOrOwner(tenantId) && collection == 'kpi_targets';
     }
 
-    // Default deny all other paths
+    // ==================== Users ====================
+
+    match /users/{userId} {
+      // Read own profile or organization members
+      allow read: if isAuthenticated() &&
+                     (request.auth.uid == userId ||
+                      resource.data.organizationId == getOrganizationId());
+
+      // Update own profile
+      allow update: if isAuthenticated() && request.auth.uid == userId;
+
+      // Create, Delete: Manager or Owner only
+      allow create, delete: if isAuthenticated() &&
+                               isManagerOrOwner(request.resource.data.tenantIds[0]);
+    }
+
+    // ==================== Tenant Data (Multi-tenant Collections) ====================
+
+    match /tenants/{tenantId}/{collection}/{docId} {
+
+      // Customers
+      function isCustomersCollection() {
+        return collection == 'customers';
+      }
+
+      // Appointments
+      function isAppointmentsCollection() {
+        return collection == 'appointments';
+      }
+
+      // Charts
+      function isChartsCollection() {
+        return collection == 'charts';
+      }
+
+      // Sales, Expenses, Ads (Financial data)
+      function isFinancialCollection() {
+        return collection in ['sales', 'expenses', 'ads'];
+      }
+
+      // Metrics, Forecasts, Insights (Analytics)
+      function isAnalyticsCollection() {
+        return collection in ['metrics', 'forecasts', 'insights'];
+      }
+
+      // AI Suggestions, Messages
+      function isMessagingCollection() {
+        return collection in ['ai_suggestions', 'messages'];
+      }
+
+      // Services, Staff Members, Settings
+      function isConfigCollection() {
+        return collection in ['services', 'staff_members', 'settings'];
+      }
+
+      // Action Items, KPI Targets
+      function isManagementCollection() {
+        return collection in ['action_items', 'kpi_targets'];
+      }
+
+      // ===== Customers =====
+      allow read: if isCustomersCollection() &&
+                     isStaffOrAbove(tenantId);
+      allow create, update: if isCustomersCollection() &&
+                               isStaffOrAbove(tenantId);
+      allow delete: if isCustomersCollection() &&
+                       isManagerOrOwner(tenantId);
+
+      // ===== Appointments =====
+      allow read: if isAppointmentsCollection() &&
+                     isStaffOrAbove(tenantId);
+      allow create, update, delete: if isAppointmentsCollection() &&
+                                       isStaffOrAbove(tenantId);
+
+      // ===== Charts =====
+      allow read: if isChartsCollection() &&
+                     isStaffOrAbove(tenantId);
+      allow create, update: if isChartsCollection() &&
+                               isStaffOrAbove(tenantId);
+      allow delete: if isChartsCollection() &&
+                       isManagerOrOwner(tenantId);
+
+      // ===== Financial Data =====
+      allow read: if isFinancialCollection() &&
+                     (isManagerOrOwner(tenantId) ||
+                      getRoles()[tenantId] == 'accountant');
+      allow create, update, delete: if isFinancialCollection() &&
+                                       isManagerOrOwner(tenantId);
+
+      // ===== Analytics =====
+      allow read: if isAnalyticsCollection() &&
+                     isManagerOrOwner(tenantId);
+      allow write: if false; // Only Cloud Functions can write
+
+      // ===== Messaging =====
+      allow read: if isMessagingCollection() &&
+                     isStaffOrAbove(tenantId);
+      allow create: if isMessagingCollection() &&
+                       isStaffOrAbove(tenantId);
+      allow update, delete: if isMessagingCollection() &&
+                               isManagerOrOwner(tenantId);
+
+      // ===== Configuration =====
+      allow read: if isConfigCollection() &&
+                     isStaffOrAbove(tenantId);
+      allow create, update, delete: if isConfigCollection() &&
+                                       isManagerOrOwner(tenantId);
+
+      // ===== Management =====
+      allow read, create, update, delete: if isManagementCollection() &&
+                                             isManagerOrOwner(tenantId);
+    }
+
+    // ==================== Storage Metadata ====================
+    // Note: Actual storage rules are in storage.rules
+    // This is for Firestore metadata if needed
+
+    match /storage_metadata/{tenantId}/{path=**} {
+      allow read: if hasTenantAccess(tenantId);
+      allow write: if isManagerOrOwner(tenantId);
+    }
+
+    // ==================== Default Deny ====================
+
     match /{document=**} {
       allow read, write: if false;
     }

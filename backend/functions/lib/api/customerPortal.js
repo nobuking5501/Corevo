@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.cancelCustomerAppointment = exports.createCustomerAppointment = exports.getCustomerCharts = exports.getCustomerAppointments = exports.getCustomerByLineUserId = void 0;
+exports.registerLineCustomer = exports.cancelCustomerAppointment = exports.createCustomerAppointment = exports.getCustomerCharts = exports.getCustomerAppointments = exports.getCustomerByLineUserId = void 0;
 const admin = __importStar(require("firebase-admin"));
 const https_1 = require("firebase-functions/v2/https");
 const zod_1 = require("zod");
@@ -67,6 +67,12 @@ const cancelCustomerAppointmentSchema = zod_1.z.object({
     lineUserId: zod_1.z.string(),
     tenantId: zod_1.z.string(),
     appointmentId: zod_1.z.string(),
+});
+const registerLineCustomerSchema = zod_1.z.object({
+    lineUserId: zod_1.z.string(),
+    tenantId: zod_1.z.string(),
+    displayName: zod_1.z.string(),
+    pictureUrl: zod_1.z.string().optional(),
 });
 // ===== API実装 =====
 /**
@@ -350,6 +356,83 @@ exports.createCustomerAppointment = (0, https_1.onCall)({ region: "asia-northeas
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
+        // 予約完了メッセージを送信（エラーがあってもメイン処理には影響させない）
+        try {
+            // テナント情報を取得
+            const tenantDoc = await db.collection("tenants").doc(tenantId).get();
+            const tenantData = tenantDoc.data();
+            const salonName = tenantData?.name || "当店";
+            // 顧客情報を取得
+            const customerDoc = customerSnapshot.docs[0];
+            const customerData = customerDoc.data();
+            const customerName = customerData?.name || "お客様";
+            // サービス名を取得
+            const serviceNames = await Promise.all(serviceIds.map(async (serviceId) => {
+                const serviceDoc = await db
+                    .collection(`tenants/${tenantId}/services`)
+                    .doc(serviceId)
+                    .get();
+                return serviceDoc.exists ? serviceDoc.data()?.name : null;
+            }));
+            const serviceName = serviceNames.filter((n) => n).join(", ") || "サービス";
+            // 日時フォーマット
+            const appointmentDate = new Intl.DateTimeFormat("ja-JP", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+                timeZone: "Asia/Tokyo",
+            }).format(new Date(startAt));
+            // メッセージテンプレートを取得
+            const templateDoc = await db
+                .collection(`tenants/${tenantId}/lineSettings`)
+                .doc("messageTemplates")
+                .get();
+            let messageBody = "";
+            if (templateDoc.exists && templateDoc.data()?.bookingConfirmationMessage) {
+                // カスタムテンプレートを使用
+                messageBody = templateDoc.data()?.bookingConfirmationMessage || "";
+                // 変数を置換
+                messageBody = messageBody
+                    .replace(/\{\{customerName\}\}/g, customerName)
+                    .replace(/\{\{appointmentDate\}\}/g, appointmentDate)
+                    .replace(/\{\{serviceName\}\}/g, serviceName)
+                    .replace(/\{\{salonName\}\}/g, salonName);
+            }
+            else {
+                // デフォルトメッセージ
+                messageBody = `${customerName} 様\n\nご予約ありがとうございます。\n\n【予約内容】\n日時: ${appointmentDate}\nサービス: ${serviceName}\n\n${salonName} にてお待ちしております。`;
+            }
+            // LINE設定を確認
+            const lineSettings = tenantData?.settings?.line;
+            const featureFlags = tenantData?.settings?.featureFlags;
+            if (featureFlags?.lineIntegration &&
+                lineSettings?.channelAccessToken &&
+                customerData?.lineUserId) {
+                // LINE Messaging APIでメッセージ送信
+                const axios = require("axios");
+                await axios.post("https://api.line.me/v2/bot/message/push", {
+                    to: customerData.lineUserId,
+                    messages: [
+                        {
+                            type: "text",
+                            text: messageBody,
+                        },
+                    ],
+                }, {
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${lineSettings.channelAccessToken}`,
+                    },
+                });
+                console.log(`✅ Booking confirmation message sent to ${customerName}`);
+            }
+        }
+        catch (messageError) {
+            // メッセージ送信エラーはログに記録するだけで、予約作成は成功とする
+            console.error("Failed to send booking confirmation message:", messageError);
+        }
         return {
             success: true,
             appointmentId: appointmentRef.id,
@@ -415,6 +498,74 @@ exports.cancelCustomerAppointment = (0, https_1.onCall)({ region: "asia-northeas
         }
         console.error("Error canceling customer appointment:", error);
         throw new https_1.HttpsError("internal", error.message || "Failed to cancel appointment");
+    }
+});
+/**
+ * LINE顧客を登録または取得（LIFF初回アクセス時に自動呼び出し）
+ */
+exports.registerLineCustomer = (0, https_1.onCall)({ region: "asia-northeast1", cors: true }, async (request) => {
+    try {
+        const { lineUserId, tenantId, displayName, pictureUrl } = registerLineCustomerSchema.parse(request.data);
+        const db = admin.firestore();
+        const customersRef = db.collection(`tenants/${tenantId}/customers`);
+        // 既存の顧客を検索
+        const existingSnapshot = await customersRef
+            .where("lineUserId", "==", lineUserId)
+            .limit(1)
+            .get();
+        if (!existingSnapshot.empty) {
+            // 既に登録されている場合は既存の顧客情報を返す
+            const customerDoc = existingSnapshot.docs[0];
+            const customerData = customerDoc.data();
+            return {
+                success: true,
+                customer: {
+                    id: customerDoc.id,
+                    ...customerData,
+                    createdAt: customerData.createdAt?.toDate().toISOString(),
+                    updatedAt: customerData.updatedAt?.toDate().toISOString(),
+                    lastVisit: customerData.lastVisit?.toDate().toISOString(),
+                    lineLinkedAt: customerData.lineLinkedAt?.toDate().toISOString(),
+                },
+                isNew: false,
+            };
+        }
+        // 新しい顧客を作成
+        const newCustomerRef = await customersRef.add({
+            tenantId,
+            lineUserId,
+            name: displayName,
+            kana: "", // LINEからは取得できないため空
+            phone: "", // LINEからは取得できないため空
+            email: "", // LINEからは取得できないため空
+            pictureUrl: pictureUrl || "",
+            lineLinkedAt: admin.firestore.FieldValue.serverTimestamp(),
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            tags: [],
+            notes: "LINE経由で登録",
+        });
+        const newCustomerDoc = await newCustomerRef.get();
+        const newCustomerData = newCustomerDoc.data();
+        return {
+            success: true,
+            customer: {
+                id: newCustomerRef.id,
+                ...newCustomerData,
+                createdAt: newCustomerData?.createdAt?.toDate().toISOString(),
+                updatedAt: newCustomerData?.updatedAt?.toDate().toISOString(),
+                lineLinkedAt: newCustomerData?.lineLinkedAt?.toDate().toISOString(),
+            },
+            isNew: true,
+            message: "新しい顧客として登録しました",
+        };
+    }
+    catch (error) {
+        if (error instanceof https_1.HttpsError) {
+            throw error;
+        }
+        console.error("Error registering LINE customer:", error);
+        throw new https_1.HttpsError("internal", error.message || "Failed to register customer");
     }
 });
 //# sourceMappingURL=customerPortal.js.map
