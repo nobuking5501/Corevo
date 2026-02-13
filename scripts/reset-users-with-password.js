@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Load and parse .env.local manually
-const envPath = join(__dirname, "apps/web/.env.local");
+const envPath = join(__dirname, "../apps/web/.env.local");
 const envContent = readFileSync(envPath, "utf8");
 const envVars = {};
 
