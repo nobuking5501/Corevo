@@ -2,6 +2,7 @@
   "name": "corevo",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "Corevo - Salon Management OS (Multi-tenant SaaS)",
   "workspaces": [
     "apps/*",
@@ -22,6 +23,7 @@
     "emulator": "firebase emulators:start --import=./emulator-data --export-on-exit",
     "emulator:seed": "node infra/scripts/seed-emulator.js",
     "emulator:copy-prod": "node scripts/copy-prod-to-emulator.js && node scripts/reset-users-with-password.js",
+    "emulator:restore-shared": "node scripts/restore-shared-data.js",
     "emulator:list-users": "node scripts/list-users.js",
     "emulator:clear": "rm -rf emulator-data && echo 'Emulator data cleared'",
     "clean": "rm -rf apps/web/.next backend/functions/lib emulator-data *-debug.log && echo 'Project cleaned'",

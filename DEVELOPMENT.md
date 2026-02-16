@@ -61,7 +61,28 @@ Emulatorが起動すると、以下のサービスが利用可能になります
 
 ### 5. Emulatorにテストデータを投入
 
-#### 方法A: サンプルデータを使用（推奨）
+#### 方法A: 共有データを使用（推奨 - 生徒さん向け）
+
+本番データから作成された共有データを使用します：
+
+```bash
+# 別ターミナルで実行
+npm run emulator:restore-shared
+```
+
+以下のテストデータが復元されます:
+
+- **Organizations**: 2組織
+- **Tenants**: 2テナント（サロン）
+- **Users**: 2ユーザー（全員パスワード: `test1234`）
+  - `test@corevo.dev` / `test1234`
+  - `test@example.com` / `test1234`
+- **Customers**: 2顧客
+- **Services**: 44サービス
+- **Staff Members**: 1スタッフ
+- **Metrics**: 42メトリクス
+
+#### 方法B: サンプルデータを使用
 
 ```bash
 # 別ターミナルで実行
@@ -73,14 +94,14 @@ npm run emulator:seed
 - **Organizations**: 4組織
 - **Tenants**: 8テナント（サロン）
 - **Users**: 2ユーザー
-  - Platform Admin: `admin@corevo.test` / `admin123`
+  - Platform Admin: `nobuking5501@gmail.com` / `kitamura55`
   - Test User: `test@example.com` / `test1234`
-- **Customers**: 44顧客
-- **Appointments**: 111予約
+- **Customers**: 複数の顧客データ
+- **Appointments**: 複数の予約データ
 - **Services**: 5サービス
 - **Staff Members**: 3スタッフ
 
-#### 方法B: 本番データをコピー（プロジェクトメンバーのみ）
+#### 方法C: 本番データをコピー（プロジェクトオーナーのみ）
 
 ```bash
 # 本番FirebaseからEmulatorにデータをコピー

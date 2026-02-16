@@ -223,20 +223,27 @@ npm run emulator
 # Corevoフォルダに移動
 cd ~/Desktop/Corevo
 
-# テストデータを投入
-npm run emulator:seed
+# 共有された本番データを復元（推奨）
+npm run emulator:restore-shared
 ```
 
 **以下のように表示されれば成功:**
 
 ```
-✅ Emulator seed completed successfully!
-Created:
-- 4 organizations
-- 8 tenants
-- 2 users (admin@corevo.test, test@example.com)
-- 44 customers
-- 111 appointments
+✅ Shared emulator data restored successfully!
+
+📋 Data includes:
+   - Organizations, Tenants, Customers, Services, etc.
+   - テストユーザー (全員パスワード: test1234)
+
+👤 ログイン情報:
+   test@corevo.dev / test1234
+   test@example.com / test1234
+```
+
+**代替方法: サンプルデータを使用する場合:**
+```bash
+npm run emulator:seed
 ```
 
 ---
@@ -277,6 +284,20 @@ http://localhost:3006
 
 ### 6-2. ログインする
 
+**共有データを使用した場合:**
+```
+メールアドレス: test@corevo.dev
+パスワード: test1234
+```
+
+または
+
+```
+メールアドレス: test@example.com
+パスワード: test1234
+```
+
+**サンプルデータ(emulator:seed)を使用した場合:**
 ```
 メールアドレス: test@example.com
 パスワード: test1234
